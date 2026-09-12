@@ -249,6 +249,148 @@ def fulfill_order(payload: OrderCreateRequest, db: Session = Depends(get_db)):
     }
 
 
+BASELINE_SUPPLIES = {
+    # (farmer_id, product_id): baseline_quantity
+    (1, 1): 3500.0,
+    (2, 1): 4000.0,
+    (3, 1): 2200.0,
+    (4, 1): 3000.0,
+    (5, 1): 2500.0,
+    (9, 1): 1800.0,
+    (2, 2): 12000.0,
+    (4, 2): 15000.0,
+    (8, 2): 10000.0,
+    (6, 2): 8000.0,
+    (1, 3): 4000.0,
+    (3, 3): 3500.0,
+    (7, 3): 5000.0,
+    (10, 3): 3000.0,
+    (1, 4): 1200.0,
+    (7, 4): 1800.0,
+    (10, 4): 1500.0,
+    (6, 5): 4500.0,
+    (5, 5): 3800.0,
+    (9, 5): 2500.0,
+}
+
+
+@router.post("/supplies/restock")
+def restock_supplies(
+    product_id: Optional[int] = Query(None, description="Optional product ID to restock specifically"),
+    reset_orders: bool = Query(False, description="Whether to also clear/reset existing orders"),
+    db: Session = Depends(get_db)
+):
+    """Replenish farmer supplies to full harvest capacity."""
+    if product_id is not None:
+        product = db.query(Product).filter(Product.id == product_id).first()
+        if not product:
+            raise HTTPException(status_code=404, detail="Product not found")
+
+    query = db.query(Supply)
+    if product_id is not None:
+        query = query.filter(Supply.product_id == product_id)
+
+    supplies = query.all()
+    count = 0
+    total_restocked_kg = 0.0
+    for s in supplies:
+        base_qty = BASELINE_SUPPLIES.get((s.farmer_id, s.product_id), 3000.0)
+        total_restocked_kg += (base_qty - s.quantity)
+        s.quantity = base_qty
+        count += 1
+
+    if reset_orders:
+        if product_id is not None:
+            orders_to_del = db.query(Order).filter(Order.product_id == product_id).all()
+            for o in orders_to_del:
+                db.query(OrderItem).filter(OrderItem.order_id == o.id).delete()
+                db.delete(o)
+        else:
+            db.query(OrderItem).delete()
+            db.query(Order).delete()
+
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Successfully restocked {count} farmer produce batch(es) to full harvest capacity.",
+        "product_id": product_id,
+        "supplies_restocked": count,
+        "orders_cleared": reset_orders
+    }
+
+
+@router.get("/orders")
+def get_orders(db: Session = Depends(get_db)):
+    """Fetch all procurement orders with order items and status."""
+    orders = db.query(Order).order_by(Order.created_at.desc()).all()
+    results = []
+    for o in orders:
+        product = db.query(Product).filter(Product.id == o.product_id).first()
+        items = db.query(OrderItem, Farmer).join(Farmer, OrderItem.farmer_id == Farmer.id).filter(OrderItem.order_id == o.id).all()
+        item_list = []
+        for itm, f in items:
+            item_list.append({
+                "farmer_id": f.id,
+                "farmer_name": f.name,
+                "location": f.location,
+                "allocated_quantity": itm.allocated_quantity,
+                "price_per_kg": itm.price_per_kg,
+                "subtotal": itm.subtotal
+            })
+        
+        results.append({
+            "id": o.id,
+            "order_number": o.order_number,
+            "buyer_name": o.buyer_name,
+            "product_id": o.product_id,
+            "product_name": product.name if product else "Unknown Commodity",
+            "total_quantity": o.total_quantity,
+            "agreed_price_per_kg": o.agreed_price_per_kg,
+            "total_procurement_cost": o.total_procurement_cost,
+            "estimated_distance_km": o.estimated_distance_km,
+            "logistics_cost": o.logistics_cost,
+            "grand_total": round(o.total_procurement_cost + o.logistics_cost, 2),
+            "status": o.status,
+            "created_at": o.created_at.strftime("%Y-%m-%d %H:%M") if o.created_at else "",
+            "items": item_list
+        })
+    return results
+
+
+@router.post("/orders/{order_id}/cancel")
+def cancel_order(order_id: int, db: Session = Depends(get_db)):
+    """Cancel an order and return allocated quantities back to farmers' supplies."""
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    if order.status == "CANCELLED":
+        raise HTTPException(status_code=400, detail="Order is already cancelled")
+
+    # Restore quantities to supplies
+    items = db.query(OrderItem).filter(OrderItem.order_id == order.id).all()
+    restored_kg = 0.0
+    for itm in items:
+        supply = db.query(Supply).filter(
+            Supply.farmer_id == itm.farmer_id,
+            Supply.product_id == order.product_id
+        ).first()
+        if supply:
+            supply.quantity += itm.allocated_quantity
+            restored_kg += itm.allocated_quantity
+
+    order.status = "CANCELLED"
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Order #{order.order_number} cancelled. {restored_kg:.1f} kg returned to local farmer network.",
+        "order_id": order.id,
+        "restored_quantity_kg": restored_kg
+    }
+
+
 @router.get("/stats")
 def platform_stats(db: Session = Depends(get_db)):
     """Platform-wide summary metrics."""

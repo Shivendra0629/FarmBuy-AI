@@ -17,12 +17,25 @@ let state = {
     forecastChart: null
 };
 
-// Buyer Hub coordinates (Kolkata Central Wholesale Hub)
-const BUYER_HUB = {
-    name: "Kolkata Central Wholesale Hub",
-    lat: 22.5726,
-    lon: 88.3639
-};
+// Buyer Hub coordinates resolution (Kolkata Wholesale Hub or Howrah Cold Chain)
+function getBuyerHub() {
+    const locSelect = document.getElementById("buyerLocationSelect");
+    const val = locSelect ? locSelect.value : "kolkata";
+    if (val === "howrah") {
+        return {
+            name: "Howrah Cold Chain Depot",
+            lat: 22.5892,
+            lon: 88.3103
+        };
+    }
+    return {
+        name: "Kolkata Central Wholesale Hub",
+        lat: 22.5726,
+        lon: 88.3639
+    };
+}
+
+let BUYER_HUB = getBuyerHub();
 
 // Initialize on DOM Ready
 document.addEventListener("DOMContentLoaded", async () => {
@@ -31,6 +44,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     initMaps();
     // Run initial analysis with default parameters
     runCompleteAnalysis();
+    // Preload order history for Orders & Tracking tab
+    loadOrderHistory();
 });
 
 // 1. Health Check
@@ -88,6 +103,10 @@ function switchTab(tabId) {
         if (state.miniMap) state.miniMap.invalidateSize();
         if (state.fullMap) state.fullMap.invalidateSize();
     }, 150);
+
+    if (tabId === "contracts") {
+        loadOrderHistory();
+    }
 }
 
 // 4. Initialize Leaflet Maps
@@ -131,10 +150,19 @@ function createCustomIcon(isDepot, label) {
     });
 }
 
-let productChangeTimeout = null;
+let demandParamsTimeout = null;
+function onDemandParamsChange() {
+    clearTimeout(demandParamsTimeout);
+    demandParamsTimeout = setTimeout(() => {
+        BUYER_HUB = getBuyerHub();
+        runCompleteAnalysis();
+    }, 250);
+}
+
 function onProductChange() {
-    clearTimeout(productChangeTimeout);
-    productChangeTimeout = setTimeout(() => {
+    clearTimeout(demandParamsTimeout);
+    demandParamsTimeout = setTimeout(() => {
+        BUYER_HUB = getBuyerHub();
         runCompleteAnalysis();
     }, 200);
 }
@@ -142,6 +170,8 @@ function onProductChange() {
 // 5. Run Complete Supply Intelligence Cycle
 async function runCompleteAnalysis() {
     if (state.isAnalyzing) return;
+
+    BUYER_HUB = getBuyerHub();
 
     const analyzeBtn = document.getElementById("analyzeBtn");
     const productId = parseInt(document.getElementById("productSelect").value, 10);
@@ -247,12 +277,14 @@ async function runCompleteAnalysis() {
         renderPriceIntelligence(priceInsight);
         if (routeData) {
             renderRouteAndMaps(routeData, matching);
+        } else {
+            clearRouteAndMaps();
         }
 
-        // Enable contract creation if matched
+        // Enable or disable contract creation
         const contractBtn = document.getElementById("generateContractBtn");
-        if (contractBtn && matching.matched_quantity > 0) {
-            contractBtn.disabled = false;
+        if (contractBtn) {
+            contractBtn.disabled = !matching.farmers || matching.farmers.length === 0 || matching.matched_quantity <= 0;
         }
 
     } catch (err) {
@@ -278,7 +310,11 @@ function updateKPIs(matching, priceInsight, route) {
     if (matching.shortage > 0) {
         shortageEl.textContent = `${matching.shortage.toLocaleString()} kg`;
         shortageEl.classList.add("text-danger");
-        document.getElementById("kpiShortageSub").textContent = "⚠️ Supply deficit detected";
+        if (matching.matched_quantity === 0) {
+            document.getElementById("kpiShortageSub").textContent = "⚠️ 0 kg available (Depleted - Restock)";
+        } else {
+            document.getElementById("kpiShortageSub").textContent = "⚠️ Supply deficit detected";
+        }
     } else {
         shortageEl.textContent = "0 kg (Fulfilled)";
         shortageEl.classList.remove("text-danger");
@@ -294,6 +330,11 @@ function updateKPIs(matching, priceInsight, route) {
 
         document.getElementById("kpiCarbon").textContent = `${route.carbon_reduction_kg} kg CO2`;
         document.getElementById("kpiFuelSaved").textContent = `Est. fuel: ₹${route.estimated_fuel_cost_inr.toLocaleString()}`;
+    } else {
+        document.getElementById("kpiDistance").textContent = "—";
+        document.getElementById("kpiDistanceSaved").textContent = "Multi-farm collection TSP";
+        document.getElementById("kpiCarbon").textContent = "—";
+        document.getElementById("kpiFuelSaved").textContent = "vs individual farmer trips";
     }
 }
 
@@ -314,7 +355,23 @@ function renderFarmerMatchTable(matching) {
     }
 
     if (!matching.farmers || matching.farmers.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">No farmer inventory found for this crop in the local network.</td></tr>`;
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="7" class="text-center py-4">
+                    <div style="color:#dc2626; font-weight:700; font-size:15px; margin-bottom:6px;">
+                        🚨 No Available Farmer Inventory for this Commodity
+                    </div>
+                    <p class="text-muted" style="font-size:13px; max-width:480px; margin:0 auto 12px; line-height:1.4;">
+                        Local farmer stock for <strong>${matching.product_name || "this commodity"}</strong> has been depleted by recent order fulfillment or exceeds current network harvest.
+                    </p>
+                    <button class="btn-sm btn-success" style="padding:7px 16px; font-size:13px;" onclick="restockSupplies(${matching.product_id})">
+                        🔄 Restock ${matching.product_name || "Produce"} (Fresh Harvest)
+                    </button>
+                </td>
+            </tr>
+        `;
+        document.getElementById("summaryTotalCost").textContent = `₹0.00`;
+        document.getElementById("summaryFarmerCount").textContent = `0 Local Farmers`;
         return;
     }
 
@@ -701,6 +758,11 @@ async function generateProcurementContract() {
         const order = await res.json();
         renderOrderContract(order);
         switchTab('contracts');
+        loadOrderHistory();
+        // Update supply analysis in the background so current stock updates
+        setTimeout(() => {
+            runCompleteAnalysis();
+        }, 500);
     } catch (err) {
         console.error("Error creating procurement contract:", err);
         alert("Could not generate procurement contract. Check backend connection.");
@@ -767,3 +829,200 @@ function renderOrderContract(order) {
         </div>
     `;
 }
+
+// 14. Clear Route and Reset Maps when 0 farmers matched
+function clearRouteAndMaps() {
+    if (state.miniMap) {
+        state.miniMapLayers.forEach(layer => state.miniMap.removeLayer(layer));
+        state.miniMapLayers = [];
+    }
+    if (state.fullMap) {
+        state.fullMapLayers.forEach(layer => state.fullMap.removeLayer(layer));
+        state.fullMapLayers = [];
+    }
+    state.currentRoute = null;
+
+    const legsPreview = document.getElementById("routeLegsPreview");
+    if (legsPreview) {
+        legsPreview.innerHTML = `<div class="text-muted text-center py-2">No active collection route. Restock supply or reduce required volume.</div>`;
+    }
+
+    const fullMapDist = document.getElementById("fullMapDistanceBadge");
+    if (fullMapDist) fullMapDist.textContent = `— km Total Circuit`;
+
+    const logTotal = document.getElementById("logTotalDist");
+    if (logTotal) logTotal.textContent = `— km`;
+
+    const logUnopt = document.getElementById("logUnoptDist");
+    if (logUnopt) logUnopt.textContent = `— km`;
+
+    const logSaved = document.getElementById("logDistSaved");
+    if (logSaved) logSaved.textContent = `— km (—%)`;
+
+    const logHours = document.getElementById("logTransitHours");
+    if (logHours) logHours.textContent = `— hrs`;
+
+    const logFuel = document.getElementById("logFuelCost");
+    if (logFuel) logFuel.textContent = `₹—`;
+
+    const logCarbon = document.getElementById("logCarbonSaved");
+    if (logCarbon) logCarbon.textContent = `— kg CO2`;
+
+    const waypointsEl = document.getElementById("routeStepsContainer");
+    if (waypointsEl) {
+        waypointsEl.innerHTML = `<div class="text-muted text-center py-3">No active waypoints. Run analysis with available supply.</div>`;
+    }
+}
+
+// 15. Restock Farmer Produce Inventory
+async function restockSupplies(productId = null) {
+    const restockBtn = document.getElementById("restockBtn");
+    if (restockBtn) {
+        restockBtn.disabled = true;
+        restockBtn.innerHTML = `<span>⏳ Restocking...</span>`;
+    }
+
+    try {
+        const url = productId 
+            ? `${API_BASE}/api/supplies/restock?product_id=${productId}`
+            : `${API_BASE}/api/supplies/restock`;
+        
+        const res = await fetch(url, { method: "POST" });
+        const data = await res.json();
+        
+        if (res.ok) {
+            showNotification(data.message || "Farmer supplies successfully restocked to full harvest capacity!");
+            await runCompleteAnalysis();
+        } else {
+            alert("Restock failed: " + (data.detail || "Server error"));
+        }
+    } catch (err) {
+        console.error("Restock error:", err);
+        alert("Could not reach backend to restock supplies.");
+    } finally {
+        if (restockBtn) {
+            restockBtn.disabled = false;
+            restockBtn.innerHTML = `<span>🔄 Restock</span>`;
+        }
+    }
+}
+
+// 16. Load Platform Order History
+async function loadOrderHistory(btn = null) {
+    const refreshBtn = btn || document.getElementById("refreshOrdersBtn");
+    if (refreshBtn) {
+        refreshBtn.disabled = true;
+        refreshBtn.innerHTML = `<span>⏳ Refreshing...</span>`;
+    }
+
+    const tbody = document.getElementById("ordersHistoryTableBody");
+    if (!tbody) {
+        if (refreshBtn) {
+            refreshBtn.disabled = false;
+            refreshBtn.innerHTML = `<span>🔄 Refresh History</span>`;
+        }
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/api/orders`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to load orders`);
+        const orders = await res.json();
+
+        if (!orders || orders.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">No procurement orders placed yet.</td></tr>`;
+            if (btn) showNotification("Order history is currently empty.");
+            return;
+        }
+
+        tbody.innerHTML = orders.map(o => {
+            const isCancelled = o.status === "CANCELLED";
+            const statusBadge = isCancelled 
+                ? `<span class="badge badge-danger">CANCELLED</span>`
+                : `<span class="badge badge-success">${o.status || "CONFIRMED"}</span>`;
+            
+            const actionBtn = isCancelled
+                ? `<span class="text-muted" style="font-size:12px;">Stock Returned</span>`
+                : `<button class="btn-cancel-order" onclick="cancelOrder(${o.id}, '${o.order_number}')">Cancel & Return Stock</button>`;
+
+            const qty = typeof o.total_quantity === "number" ? o.total_quantity.toLocaleString() : (o.total_quantity || 0);
+            const rate = typeof o.agreed_price_per_kg === "number" ? o.agreed_price_per_kg.toFixed(2) : (o.agreed_price_per_kg || 0);
+            const total = typeof o.grand_total === "number" ? o.grand_total.toLocaleString() : (o.grand_total || 0);
+
+            return `
+                <tr>
+                    <td><strong>#${o.order_number}</strong></td>
+                    <td class="text-muted" style="font-size:12px;">${o.created_at || "—"}</td>
+                    <td><strong>${o.product_name || "Produce"}</strong></td>
+                    <td><strong>${qty} kg</strong></td>
+                    <td>₹${rate}/kg</td>
+                    <td><strong style="color:#15803d;">₹${total}</strong></td>
+                    <td>${statusBadge}</td>
+                    <td>${actionBtn}</td>
+                </tr>
+            `;
+        }).join("");
+
+        if (btn) {
+            showNotification(`Updated: ${orders.length} order(s) loaded!`);
+        }
+    } catch (err) {
+        console.error("Error loading order history:", err);
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4">⚠️ Could not load order history (${err.message}). Ensure backend is reachable.</td></tr>`;
+        showNotification("Failed to load order history.");
+    } finally {
+        if (refreshBtn) {
+            refreshBtn.disabled = false;
+            refreshBtn.innerHTML = `<span>🔄 Refresh History</span>`;
+        }
+    }
+}
+
+// 17. Cancel Order and Return Stock to Farmers
+async function cancelOrder(orderId, orderNum) {
+    if (!confirm(`Cancel order #${orderNum} and return produce back to farmers' inventory?`)) {
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/api/orders/${orderId}/cancel`, { method: "POST" });
+        const data = await res.json();
+        if (res.ok) {
+            showNotification(data.message || `Order #${orderNum} cancelled successfully!`);
+            await loadOrderHistory();
+            await runCompleteAnalysis();
+        } else {
+            alert(data.detail || "Could not cancel order");
+        }
+    } catch (err) {
+        console.error("Cancel order error:", err);
+        alert("Failed to cancel order.");
+    }
+}
+
+// 18. Toast Notification Helper
+function showNotification(msg) {
+    let toast = document.getElementById("appToast");
+    if (!toast) {
+        toast = document.createElement("div");
+        toast.id = "appToast";
+        toast.className = "app-toast";
+        document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.classList.add("show");
+    setTimeout(() => {
+        toast.classList.remove("show");
+    }, 3800);
+}
+
+// Explicit window scope bindings
+window.loadOrderHistory = loadOrderHistory;
+window.cancelOrder = cancelOrder;
+window.restockSupplies = restockSupplies;
+window.runCompleteAnalysis = runCompleteAnalysis;
+window.onDemandParamsChange = onDemandParamsChange;
+window.onProductChange = onProductChange;
+window.switchTab = switchTab;
+window.generateProcurementContract = generateProcurementContract;
+window.simulateNegotiationOffer = simulateNegotiationOffer;

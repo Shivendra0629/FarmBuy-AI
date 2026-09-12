@@ -65,14 +65,14 @@
                 <div class="input-group">
                     <label for="quantityInput">Required Volume</label>
                     <div class="unit-input-wrapper">
-                        <input type="number" id="quantityInput" value="8000" min="100" step="500">
+                        <input type="number" id="quantityInput" value="8000" min="100" step="500" oninput="onDemandParamsChange()">
                         <span class="unit-badge">kg</span>
                     </div>
                 </div>
 
                 <div class="input-group">
                     <label for="buyerLocationSelect">Buyer Delivery Hub</label>
-                    <select id="buyerLocationSelect">
+                    <select id="buyerLocationSelect" onchange="onDemandParamsChange()">
                         <option value="kolkata">Kolkata Central Wholesale Hub (Posta / Mechua)</option>
                         <option value="howrah">Howrah Cold Chain Depot</option>
                     </select>
@@ -80,7 +80,7 @@
 
                 <div class="input-group">
                     <label for="strategySelect">Matching Strategy</label>
-                    <select id="strategySelect">
+                    <select id="strategySelect" onchange="onDemandParamsChange()">
                         <option value="balanced">⚖️ Balanced (Cost + Distance + Rating)</option>
                         <option value="lowest_cost">💰 Cost Minimizer (Lowest Price First)</option>
                         <option value="nearest">📍 Proximity First (Fastest Pickup)</option>
@@ -90,6 +90,9 @@
                 <div class="input-group action-group">
                     <button class="btn-primary" id="analyzeBtn" onclick="runCompleteAnalysis()">
                         <span>⚡ Run Intelligence Cycle</span>
+                    </button>
+                    <button class="btn-secondary" id="restockBtn" onclick="restockSupplies()" title="Replenish farmer supplies to full harvest capacity">
+                        <span>🔄 Restock</span>
                     </button>
                 </div>
             </div>
@@ -396,6 +399,38 @@
                         <h4>No Active Procurement Contract in this Session</h4>
                         <p>Run the supply intelligence cycle and click <strong>"Lock & Generate Procurement Contract"</strong> to execute an order.</p>
                         <button class="btn-primary" onclick="switchTab('dashboard')">Go to Supply Hub</button>
+                    </div>
+                </div>
+
+                <!-- Order History Table -->
+                <div class="orders-history-section mt-4 pt-3" style="border-top: 1px solid var(--border-color);">
+                    <div class="card-header pb-2" style="display: flex; justify-content: space-between; align-items: center; padding: 0 0 12px 0;">
+                        <div>
+                            <h4>📜 Platform Procurement Order History</h4>
+                            <p class="section-desc">View executed orders, allocated volumes, and cancel orders to restore farmer stock</p>
+                        </div>
+                        <button class="btn-sm" id="refreshOrdersBtn" onclick="loadOrderHistory(this)">🔄 Refresh History</button>
+                    </div>
+                    <div class="table-responsive mt-2">
+                        <table class="data-table" id="ordersHistoryTable">
+                            <thead>
+                                <tr>
+                                    <th>Order #</th>
+                                    <th>Date</th>
+                                    <th>Commodity</th>
+                                    <th>Volume</th>
+                                    <th>Rate</th>
+                                    <th>Total Cost</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ordersHistoryTableBody">
+                                <tr>
+                                    <td colspan="8" class="text-muted text-center py-3">Loading order history...</td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>

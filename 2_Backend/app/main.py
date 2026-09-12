@@ -12,7 +12,7 @@ from .routers import matching, supply_intelligence
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
-    title="AgriConnect AI",
+    title="SEEDHA SAUDA AI ",
     description="AI-Powered Farm-to-Buyer Supply Intelligence Platform",
     version="2.0.0"
 )

@@ -56,7 +56,9 @@ class Supply(Base):
     id = Column(Integer, primary_key=True, index=True)
     farmer_id = Column(Integer, ForeignKey("farmers.id"), nullable=False)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
-    quantity = Column(Float, nullable=False)  # in kg
+    quantity = Column(Float, nullable=False)  # Current stock left in kg
+    cleared_quantity = Column(Float, default=0.0)  # Stock cleared / sold in kg
+    initial_quantity = Column(Float, nullable=True)  # Total initial harvest batch in kg
     expected_price = Column(Float, nullable=False)  # in INR/kg
     quality_grade = Column(String, default="Grade A")  # Grade A, Grade B, Grade C
     available_date = Column(Date, nullable=True)

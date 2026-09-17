@@ -110,7 +110,7 @@ function initAuthState() {
     }
 }
 
-// Apply role-based platform view and user header pill
+// Apply role-based platform view and user header pill (Strict Separation)
 function applyUserPlatformView() {
     const user = state.currentUser;
     if (!user) return;
@@ -118,42 +118,57 @@ function applyUserPlatformView() {
     const navPill = document.getElementById("navUserStatusPill");
     const navIcon = document.getElementById("navUserRoleIcon");
     const navName = document.getElementById("navUserName");
-    const farmerPortalView = document.getElementById("farmerPortalView");
-    const buyerPortalView = document.getElementById("buyerPortalView");
+    const farmerNav = document.getElementById("farmerNavLinks");
+    const buyerNav = document.getElementById("buyerNavLinks");
+    const farmerSection = document.getElementById("farmerDashboardSection");
+    const buyerSection = document.getElementById("buyerDashboardSection");
 
     if (user.role === "farmer") {
+        // Show Farmer Navbar & Farmer Dashboard ONLY
         if (navIcon) navIcon.textContent = "🌾";
         if (navName) navName.textContent = `Farmer: ${user.name}`;
         if (navPill) navPill.className = "user-status-pill farmer-pill";
 
-        if (farmerPortalView) {
-            farmerPortalView.style.display = "block";
-            const welcomeTitle = document.getElementById("farmerPortalWelcome");
-            if (welcomeTitle) welcomeTitle.textContent = `🌾 Welcome, Farmer ${user.name}!`;
-            const addrSub = document.getElementById("farmerPortalAddressSub");
-            if (addrSub) addrSub.textContent = `${user.address || "Farm Gate"}, ${user.state || ""} (${user.pincode || ""}) • Phone: ${user.phone || ""}`;
-            loadFarmerProduceList();
-        }
-        if (buyerPortalView) {
-            buyerPortalView.style.display = "block";
-        }
-        runCompleteAnalysis();
+        if (buyerNav) buyerNav.style.display = "none";
+        if (farmerNav) farmerNav.style.display = "flex";
+
+        if (buyerSection) buyerSection.style.display = "none";
+        if (farmerSection) farmerSection.style.display = "block";
+
+        const welcomeTitle = document.getElementById("farmerPortalWelcome");
+        if (welcomeTitle) welcomeTitle.textContent = `🌾 Welcome, Farmer ${user.name}!`;
+        const addrSub = document.getElementById("farmerPortalAddressSub");
+        if (addrSub) addrSub.textContent = `${user.address || "Farm Gate"}, ${user.state || ""} (${user.pincode || ""}) • Phone: ${user.phone || ""}`;
+
+        loadFarmerProduceList();
     } else {
-        // Buyer Role
+        // Show Buyer Navbar & Buyer Dashboard ONLY
         if (navIcon) navIcon.textContent = "🏢";
         if (navName) navName.textContent = `Buyer: ${user.name}`;
         if (navPill) navPill.className = "user-status-pill buyer-pill";
 
-        if (farmerPortalView) farmerPortalView.style.display = "none";
-        if (buyerPortalView) buyerPortalView.style.display = "block";
-        runCompleteAnalysis();
-    }
+        if (farmerNav) farmerNav.style.display = "none";
+        if (buyerNav) buyerNav.style.display = "flex";
 
-    // Refresh Leaflet maps once DOM layout is updated
-    setTimeout(() => {
-        if (state.miniMap) state.miniMap.invalidateSize();
-        if (state.fullMap) state.fullMap.invalidateSize();
-    }, 200);
+        if (farmerSection) farmerSection.style.display = "none";
+        if (buyerSection) buyerSection.style.display = "block";
+
+        loadProducts();
+        runCompleteAnalysis();
+
+        // Refresh Leaflet maps once DOM layout is unhidden
+        setTimeout(() => {
+            if (state.miniMap) state.miniMap.invalidateSize();
+            if (state.fullMap) state.fullMap.invalidateSize();
+        }, 200);
+    }
+}
+
+function scrollToFarmerSection(sectionId) {
+    const el = document.getElementById(sectionId);
+    if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
 }
 
 // Handle Farmer Registration & Crop Submission
@@ -300,43 +315,297 @@ function handleLogout() {
     showToast("🚪 Logged out. Choose Farmer or Buyer to log in.", "info");
 }
 
-// Fetch Farmer's Listed Produce from Database
+// Fetch Farmer's Listed Produce, KPIs & Stock Clearance from Database
 async function loadFarmerProduceList() {
     if (!state.currentUser || state.currentUser.role !== "farmer") return;
     const tableBody = document.getElementById("farmerProduceListBody");
-    if (!tableBody) return;
+    const kpiHarvest = document.getElementById("farmerKpiHarvest");
+    const kpiOrdered = document.getElementById("farmerKpiOrdered") || document.getElementById("farmerKpiCleared");
+    const kpiClearancePct = document.getElementById("farmerKpiClearancePct");
+    const kpiLeft = document.getElementById("farmerKpiLeft");
+    const kpiRevenue = document.getElementById("farmerKpiRevenue");
+    const kpiRemainingVal = document.getElementById("farmerKpiRemainingVal");
+    const cropFilter = document.getElementById("farmerOrderCropFilter");
+    const mandiContainer = document.getElementById("farmerMandiRatesContainer");
 
     try {
         const res = await fetch(`${API_BASE}/api/auth/farmer/${state.currentUser.id}/supplies`);
+        if (res.status === 404) {
+            handleLogout();
+            return;
+        }
         if (!res.ok) return;
         const data = await res.json();
 
-        if (!data.supplies || data.supplies.length === 0) {
-            tableBody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-3">No active produce listed yet. Click "+ Add Another Crop" above.</td></tr>`;
-            return;
+        // 1. Update 4 Farmer KPI Cards
+        if (data.kpis) {
+            const totOrdered = data.kpis.total_ordered_kg ?? data.kpis.total_cleared_kg ?? 0;
+            const totLeft = data.kpis.total_left_kg ?? 0;
+            const orderPct = data.kpis.order_fulfillment_pct ?? data.kpis.overall_clearance_pct ?? 0;
+            const orderRev = data.kpis.total_ordered_revenue ?? data.kpis.total_cleared_revenue ?? 0;
+
+            if (kpiHarvest) kpiHarvest.textContent = `${Number(data.kpis.total_harvest_kg).toLocaleString()} kg`;
+            if (kpiOrdered) kpiOrdered.textContent = `${Number(totOrdered).toLocaleString()} kg`;
+            if (kpiClearancePct) kpiClearancePct.textContent = `${orderPct}% Ordered`;
+            if (kpiLeft) kpiLeft.textContent = `${Number(totLeft).toLocaleString()} kg`;
+            if (kpiRevenue) kpiRevenue.textContent = `₹${Number(orderRev).toLocaleString()}`;
+            if (kpiRemainingVal) kpiRemainingVal.textContent = `₹${Number(data.kpis.total_remaining_value).toLocaleString()}`;
         }
 
-        tableBody.innerHTML = data.supplies.map(s => `
-            <tr>
-                <td><strong>${s.product_name}</strong> <span class="badge" style="background:#f1f5f9; color:#475569; font-size:11px; margin-left:4px;">${s.quality_grade || "Grade A"}</span></td>
-                <td><strong>${Number(s.quantity_kg).toLocaleString()}</strong> kg</td>
-                <td><strong>₹${Number(s.expected_price).toFixed(2)}</strong>/kg</td>
-                <td><span style="color:var(--text-muted);">₹${Number(s.mandi_benchmark).toFixed(2)}/kg</span></td>
-                <td><strong class="text-success">₹${Number(s.subtotal_value).toLocaleString()}</strong></td>
-                <td><span class="badge" style="background:#ecfdf5; color:#15803d; font-weight:700;">● Stored & Active</span></td>
-            </tr>
-        `).join("");
+        // 2. Populate Farmer Crop Filter Dropdown for Orders
+        if (cropFilter && data.supplies) {
+            const currentVal = cropFilter.value;
+            cropFilter.innerHTML = `<option value="">🌾 All Commodities</option>` +
+                data.supplies.map(s => `
+                    <option value="${s.product_id}">
+                        ${s.product_name} (${Number(s.quantity_ordered_kg || 0).toLocaleString()} kg ordered)
+                    </option>
+                `).join("");
+            if (currentVal) {
+                cropFilter.value = currentVal;
+            }
+        }
+
+        // 3. Render Commodities & Stock Table
+        if (tableBody) {
+            if (!data.supplies || data.supplies.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">No active produce listed yet. Use the form below to list your commodities.</td></tr>`;
+            } else {
+                tableBody.innerHTML = data.supplies.map(s => {
+                    const ordKg = s.quantity_ordered_kg ?? s.stock_cleared_kg ?? 0;
+                    const leftKg = s.quantity_left_kg ?? s.stock_left_kg ?? 0;
+                    const totKg = s.total_harvest_kg || (leftKg + ordKg);
+                    const pctOrdered = Math.min(100, Math.max(0, s.ordered_pct ?? s.clearance_pct ?? 0));
+                    const pctLeft = Math.max(0, 100 - pctOrdered);
+                    
+                    let diffBadge = "";
+                    if (s.price_diff > 0) {
+                        diffBadge = `<span class="mandi-diff-tag above">+₹${s.price_diff.toFixed(2)} vs Mandi</span>`;
+                    } else if (s.price_diff < 0) {
+                        diffBadge = `<span class="mandi-diff-tag below">-₹${Math.abs(s.price_diff).toFixed(2)} vs Mandi</span>`;
+                    } else {
+                        diffBadge = `<span class="mandi-diff-tag equal">At Mandi Parity</span>`;
+                    }
+
+                    return `
+                        <tr>
+                            <td>
+                                <strong>${s.product_name}</strong> 
+                                <span class="badge" style="background:#f1f5f9; color:#475569; font-size:11px; margin-left:4px;">${s.quality_grade}</span>
+                            </td>
+                            <td><strong>₹${Number(s.expected_price).toFixed(2)}</strong>/kg</td>
+                            <td>
+                                <span>₹${Number(s.mandi_benchmark).toFixed(2)}/kg</span>
+                                ${diffBadge}
+                            </td>
+                            <td><strong style="color:#16a34a; font-size:14px;">${Number(leftKg).toLocaleString()}</strong> kg</td>
+                            <td><strong style="color:#2563eb; font-size:14px;">${Number(ordKg).toLocaleString()}</strong> kg</td>
+                            <td>
+                                <div class="stock-progress-wrap">
+                                    <div class="stock-progress-bar">
+                                        <div class="stock-fill-cleared" style="width: ${pctOrdered}%;" title="${pctOrdered}% Ordered"></div>
+                                        <div class="stock-fill-left" style="width: ${pctLeft}%;" title="${pctLeft}% Left"></div>
+                                    </div>
+                                    <div class="stock-progress-text">
+                                        <span style="color:#2563eb; font-weight:600;">${pctOrdered}% Ordered</span>
+                                        <span style="color:#16a34a; font-weight:600;">${Number(leftKg).toLocaleString()} kg left</span>
+                                    </div>
+                                </div>
+                            </td>
+                            <td><strong class="text-success">₹${Number(s.remaining_value).toLocaleString()}</strong></td>
+                            <td>
+                                <button type="button" class="btn-primary" style="padding:5px 12px; font-size:12px; background:#2563eb; display:inline-flex; align-items:center; gap:5px;" onclick="selectCropAndShowOrders(${s.product_id}, '${s.product_name}')">
+                                    🔍 View Orders
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                }).join("");
+            }
+        }
+
+        // 4. Render Mandi Guidance Cards
+        if (mandiContainer && data.supplies) {
+            mandiContainer.innerHTML = data.supplies.map(s => {
+                const leftKg = s.quantity_left_kg ?? s.stock_left_kg ?? 0;
+                const ordKg = s.quantity_ordered_kg ?? s.stock_cleared_kg ?? 0;
+                return `
+                <div class="farmer-mandi-card">
+                    <h4>${s.product_name}</h4>
+                    <div class="rate-row">
+                        <span style="color:#64748b;">Mandi Benchmark</span>
+                        <strong>₹${Number(s.mandi_benchmark).toFixed(2)}/kg</strong>
+                    </div>
+                    <div class="rate-row">
+                        <span style="color:#64748b;">Your Asking Rate</span>
+                        <strong style="color:${s.price_diff > 0 ? '#b91c1c' : '#15803d'};">₹${Number(s.expected_price).toFixed(2)}/kg</strong>
+                    </div>
+                    <div class="rate-row" style="font-size:11.5px;">
+                        <span style="color:#64748b;">Quantity Left / Ordered</span>
+                        <strong><span style="color:#16a34a;">${Number(leftKg).toLocaleString()} kg left</span> • <span style="color:#2563eb;">${Number(ordKg).toLocaleString()} kg ord.</span></strong>
+                    </div>
+                </div>
+            `}).join("");
+        }
+
+        // 5. Load and Render Incoming Buyer Orders
+        const activeProdFilter = cropFilter && cropFilter.value ? parseInt(cropFilter.value) : null;
+        await loadFarmerOrders(activeProdFilter);
+
     } catch (err) {
         console.error("Error loading farmer produce list:", err);
     }
 }
 
-// Toggle Add Another Crop Form
-function toggleAddMoreCropForm() {
-    const card = document.getElementById("inlineAddCropCard");
-    if (!card) return;
-    const isHidden = card.style.display === "none" || !card.style.display;
-    card.style.display = isHidden ? "block" : "none";
+// Load and Render Incoming Buyer Orders for Farmer
+async function loadFarmerOrders(productId = null) {
+    if (!state.currentUser || state.currentUser.role !== "farmer") return;
+    const container = document.getElementById("farmerOrdersListContainer");
+    if (!container) return;
+
+    try {
+        const url = `${API_BASE}/api/auth/farmer/${state.currentUser.id}/orders${productId ? `?product_id=${productId}` : ""}`;
+        const res = await fetch(url);
+        if (!res.ok) {
+            container.innerHTML = `<div class="text-center text-muted py-4">Unable to load buyer orders.</div>`;
+            return;
+        }
+        const data = await res.json();
+        const orders = data.orders || [];
+
+        if (orders.length === 0) {
+            const cropFilter = document.getElementById("farmerOrderCropFilter");
+            const selectedCropText = cropFilter && cropFilter.selectedIndex > 0 ? cropFilter.options[cropFilter.selectedIndex].text.split("(")[0].trim() : "your crops";
+            container.innerHTML = `
+                <div class="farmer-orders-empty">
+                    <div style="font-size:32px; margin-bottom:8px;">📦</div>
+                    <h4>No Incoming Orders Yet for ${selectedCropText}</h4>
+                    <p>When verified buyers (wholesalers, institutions, or retail networks) procure this crop through AgriConnect AI, their order details, contact info, and pickup quantities will appear here.</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="farmer-orders-grid">
+                ${orders.map(o => `
+                    <div class="farmer-order-card">
+                        <div class="order-card-header">
+                            <div>
+                                <div class="order-buyer-name">
+                                    <span>🏢</span>
+                                    <span>${o.buyer_name}</span>
+                                </div>
+                                <div class="order-buyer-contact">
+                                    <span>📞 <a href="tel:${o.buyer_phone}">${o.buyer_phone}</a></span>
+                                    <span>•</span>
+                                    <span>📍 ${o.buyer_city}</span>
+                                </div>
+                            </div>
+                            <span class="badge badge-verified" style="font-size:11px;">${o.status || 'CONFIRMED'}</span>
+                        </div>
+
+                        <div class="order-card-details">
+                            <div class="order-card-row">
+                                <span class="order-card-label">Commodity</span>
+                                <span class="order-card-value">${o.product_name}</span>
+                            </div>
+                            <div class="order-card-row">
+                                <span class="order-card-label">Quantity Taking</span>
+                                <span class="order-card-value" style="color:#2563eb; font-size:14.5px;">${Number(o.allocated_quantity_kg).toLocaleString()} kg</span>
+                            </div>
+                            <div class="order-card-row">
+                                <span class="order-card-label">Agreed Rate</span>
+                                <span class="order-card-value">₹${Number(o.price_per_kg).toFixed(2)}/kg</span>
+                            </div>
+                            <div class="order-card-row">
+                                <span class="order-card-label">Order Payout</span>
+                                <span class="order-card-value" style="color:#16a34a; font-size:14.5px;">₹${Number(o.subtotal).toLocaleString()}</span>
+                            </div>
+                        </div>
+
+                        <div class="order-card-footer">
+                            <div style="font-size:11.5px; color:#64748b;">
+                                <span>#${o.order_number}</span> • <span>${o.created_at}</span>
+                            </div>
+                            <button type="button" class="btn-delete-order" onclick="deleteFarmerOrder(${o.order_item_id}, '${o.product_name}', ${o.allocated_quantity_kg})">
+                                🗑️ Remove from History
+                            </button>
+                        </div>
+                    </div>
+                `).join("")}
+            </div>
+        `;
+
+    } catch (err) {
+        console.error("Error loading farmer orders:", err);
+        container.innerHTML = `<div class="text-center text-danger py-4">Error loading orders.</div>`;
+    }
+}
+
+// React when crop filter changes in the Orders panel
+function onFarmerOrderCropFilterChange() {
+    const filterEl = document.getElementById("farmerOrderCropFilter");
+    const prodId = filterEl && filterEl.value ? parseInt(filterEl.value) : null;
+    loadFarmerOrders(prodId);
+}
+
+// Select a crop and immediately view its buyer orders
+function selectCropAndShowOrders(productId, productName) {
+    const filterEl = document.getElementById("farmerOrderCropFilter");
+    if (filterEl) {
+        filterEl.value = productId;
+    }
+    loadFarmerOrders(productId);
+    scrollToFarmerSection("farmerOrdersSection");
+    showToast(`🔍 Showing orders for ${productName}`, "info");
+}
+
+// Delete an individual order item from farmer's history
+async function deleteFarmerOrder(orderItemId, cropName, qtyKg) {
+    if (!state.currentUser || state.currentUser.role !== "farmer") return;
+    if (!confirm(`Are you sure you want to remove this order of ${qtyKg} kg ${cropName} from your history?`)) {
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/api/auth/farmer/${state.currentUser.id}/orders/${orderItemId}`, {
+            method: "DELETE"
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Failed to remove order.");
+
+        showToast(`🗑️ ${data.message}`, "success");
+        await loadFarmerProduceList();
+    } catch (err) {
+        console.error("Error deleting order:", err);
+        showToast(`⚠️ ${err.message}`, "error");
+    }
+}
+
+// Clear all order history (or for selected crop)
+async function clearFarmerOrderHistory() {
+    if (!state.currentUser || state.currentUser.role !== "farmer") return;
+    const filterEl = document.getElementById("farmerOrderCropFilter");
+    const prodId = filterEl && filterEl.value ? parseInt(filterEl.value) : null;
+    const cropName = prodId && filterEl.selectedIndex > 0 ? filterEl.options[filterEl.selectedIndex].text.split("(")[0].trim() : "all crops";
+
+    if (!confirm(`Are you sure you want to clear order history for ${cropName}?`)) {
+        return;
+    }
+
+    try {
+        const url = `${API_BASE}/api/auth/farmer/${state.currentUser.id}/orders${prodId ? `?product_id=${prodId}` : ""}`;
+        const res = await fetch(url, { method: "DELETE" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Failed to clear history.");
+
+        showToast(`🧹 ${data.message}`, "success");
+        await loadFarmerProduceList();
+    } catch (err) {
+        console.error("Error clearing order history:", err);
+        showToast(`⚠️ ${err.message}`, "error");
+    }
 }
 
 // Save Additional Crop to Farmer's Catalog in Database
@@ -347,13 +616,21 @@ async function handleInlineAddSupply(event) {
     const cropInput = document.getElementById("inlineCropName");
     const qtyInput = document.getElementById("inlineCropQty");
     const priceInput = document.getElementById("inlineCropPrice");
+    const gradeInput = document.getElementById("inlineCropGrade");
+    const btn = document.getElementById("inlineSaveCropBtn");
+
+    const originalText = btn ? btn.innerHTML : "🌾 Save Crop to Database";
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span>⏳ Saving Crop...</span>`;
+    }
 
     const payload = {
         farmer_id: state.currentUser.id,
         commodity: cropInput.value.trim(),
         quantity_kg: parseFloat(qtyInput.value),
         price_per_kg: parseFloat(priceInput.value),
-        quality_grade: "Grade A"
+        quality_grade: gradeInput ? gradeInput.value : "Grade A"
     };
 
     try {
@@ -369,23 +646,16 @@ async function handleInlineAddSupply(event) {
         cropInput.value = "";
         qtyInput.value = "";
         priceInput.value = "";
-        toggleAddMoreCropForm();
 
         await loadFarmerProduceList();
         await loadProducts();
-        runCompleteAnalysis();
     } catch (err) {
         showToast(`⚠️ ${err.message}`, "error");
-    }
-}
-
-// Smooth scroll / toggle to Buyer Marketplace view
-function showBuyerMarketplaceView() {
-    const buyerView = document.getElementById("buyerPortalView");
-    if (buyerView) {
-        buyerView.style.display = "block";
-        buyerView.scrollIntoView({ behavior: "smooth" });
-        showToast("🏢 Viewing Live Crop Marketplace & Buyer Procurement", "info");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
     }
 }
 
@@ -1301,9 +1571,13 @@ async function loadOrderHistory(btn = null) {
                 ? `<span class="badge badge-danger">CANCELLED</span>`
                 : `<span class="badge badge-success">${o.status || "CONFIRMED"}</span>`;
             
-            const actionBtn = isCancelled
-                ? `<span class="text-muted" style="font-size:12px;">Stock Returned</span>`
-                : `<button class="btn-cancel-order" onclick="cancelOrder(${o.id}, '${o.order_number}')">Cancel & Return Stock</button>`;
+            const cancelBtn = !isCancelled
+                ? `<button class="btn-cancel-order" onclick="cancelOrder(${o.id}, '${o.order_number}')">Cancel & Return Stock</button>`
+                : `<span class="text-muted" style="font-size:12px;">Stock Returned</span>`;
+            
+            const deleteBtn = `<button class="btn-delete-order" style="padding:4px 8px; font-size:11px; margin-left:6px; background:#fff1f2; color:#be123c; border:1px solid #fecdd3; border-radius:4px; cursor:pointer;" onclick="deleteBuyerOrder(${o.id}, '${o.order_number}')" title="Delete from order history">🗑️</button>`;
+
+            const actionCell = `<div style="display:flex; align-items:center;">${cancelBtn}${deleteBtn}</div>`;
 
             const qty = typeof o.total_quantity === "number" ? o.total_quantity.toLocaleString() : (o.total_quantity || 0);
             const rate = typeof o.agreed_price_per_kg === "number" ? o.agreed_price_per_kg.toFixed(2) : (o.agreed_price_per_kg || 0);
@@ -1318,7 +1592,7 @@ async function loadOrderHistory(btn = null) {
                     <td>₹${rate}/kg</td>
                     <td><strong style="color:#15803d;">₹${total}</strong></td>
                     <td>${statusBadge}</td>
-                    <td>${actionBtn}</td>
+                    <td>${actionCell}</td>
                 </tr>
             `;
         }).join("");
@@ -1360,7 +1634,55 @@ async function cancelOrder(orderId, orderNum) {
     }
 }
 
-// 18. Toast Notification Helper
+// 18. Delete Single Buyer Order from History
+async function deleteBuyerOrder(orderId, orderNum) {
+    if (!confirm(`Remove order #${orderNum} from platform history?`)) {
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/api/orders/${orderId}`, { method: "DELETE" });
+        const data = await res.json();
+        if (res.ok) {
+            showNotification(data.message || `Order #${orderNum} removed from history.`);
+            await loadOrderHistory();
+            if (state.currentUser && state.currentUser.role === "farmer") {
+                loadFarmerProduceList();
+            }
+        } else {
+            alert(data.detail || "Could not delete order");
+        }
+    } catch (err) {
+        console.error("Delete order error:", err);
+        alert("Failed to delete order.");
+    }
+}
+
+// 19. Clear All Buyer Order History
+async function clearBuyerOrderHistory() {
+    if (!confirm("Are you sure you want to clear all platform order history? This keeps the dashboard tidy.")) {
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/api/orders`, { method: "DELETE" });
+        const data = await res.json();
+        if (res.ok) {
+            showNotification(data.message || "Order history cleared.");
+            await loadOrderHistory();
+            if (state.currentUser && state.currentUser.role === "farmer") {
+                loadFarmerProduceList();
+            }
+        } else {
+            alert(data.detail || "Could not clear order history");
+        }
+    } catch (err) {
+        console.error("Clear order history error:", err);
+        alert("Failed to clear order history.");
+    }
+}
+
+// 20. Toast Notification Helper
 function showNotification(msg) {
     let toast = document.getElementById("appToast");
     if (!toast) {
@@ -1379,6 +1701,8 @@ function showNotification(msg) {
 // Explicit window scope bindings
 window.loadOrderHistory = loadOrderHistory;
 window.cancelOrder = cancelOrder;
+window.deleteBuyerOrder = deleteBuyerOrder;
+window.clearBuyerOrderHistory = clearBuyerOrderHistory;
 window.restockSupplies = restockSupplies;
 window.runCompleteAnalysis = runCompleteAnalysis;
 window.onDemandParamsChange = onDemandParamsChange;

@@ -214,13 +214,14 @@ def fulfill_order(payload: OrderCreateRequest, db: Session = Depends(get_db)):
         )
         db.add(item)
 
-        # Update available supply quantity
+        # Update available supply quantity and quantity ordered
         supply_record = db.query(Supply).filter(
             Supply.farmer_id == f_id,
             Supply.product_id == payload.product_id
         ).first()
         if supply_record:
             supply_record.quantity = max(0.0, supply_record.quantity - alloc_qty)
+            supply_record.cleared_quantity = (supply_record.cleared_quantity or 0.0) + alloc_qty
 
     db.commit()
 
@@ -378,6 +379,7 @@ def cancel_order(order_id: int, db: Session = Depends(get_db)):
         ).first()
         if supply:
             supply.quantity += itm.allocated_quantity
+            supply.cleared_quantity = max(0.0, (supply.cleared_quantity or 0.0) - itm.allocated_quantity)
             restored_kg += itm.allocated_quantity
 
     order.status = "CANCELLED"
@@ -406,4 +408,34 @@ def platform_stats(db: Session = Depends(get_db)):
         "orders_fulfilled": total_orders,
         "avg_distance_reduction_pct": 38.5,
         "avg_procurement_savings_pct": 14.2
+    }
+
+
+@router.delete("/orders")
+def clear_all_orders(db: Session = Depends(get_db)):
+    """Clear all procurement order history to keep the dashboard tidy."""
+    db.query(OrderItem).delete()
+    del_count = db.query(Order).delete()
+    db.commit()
+    return {
+        "status": "success",
+        "message": f"Successfully cleared {del_count} order(s) from platform history.",
+        "deleted_count": del_count
+    }
+
+
+@router.delete("/orders/{order_id}")
+def delete_single_order(order_id: int, db: Session = Depends(get_db)):
+    """Delete a single procurement order from history."""
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    num = order.order_number
+    db.query(OrderItem).filter(OrderItem.order_id == order.id).delete()
+    db.delete(order)
+    db.commit()
+    return {
+        "status": "success",
+        "message": f"Order #{num} removed from history."
     }

@@ -388,13 +388,22 @@
             </div>
         </div>
 
-        <nav class="nav-links">
+        <!-- Buyer Navigation Links (Shown when Buyer is active) -->
+        <nav class="nav-links" id="buyerNavLinks">
             <button class="nav-tab active" onclick="switchTab('dashboard')">📊 Supply Hub</button>
             <button class="nav-tab" onclick="switchTab('forecast')">📈 ML Demand Forecast</button>
             <button class="nav-tab" onclick="switchTab('pricing')">🤝 Price Intelligence</button>
             <button class="nav-tab" onclick="switchTab('logistics')">🚚 Route & Map</button>
             <button class="nav-tab" onclick="switchTab('contracts')">📜 Orders & Tracking</button>
             <button class="nav-tab highlight" onclick="switchTab('differentiation')">🏆 Why AgriConnect?</button>
+        </nav>
+
+        <!-- Farmer Navigation Links (Shown when Farmer is active) -->
+        <nav class="nav-links" id="farmerNavLinks" style="display:none;">
+            <button class="nav-tab active" onclick="scrollToFarmerSection('farmerProduceSection')">🌾 My Commodities & Stock</button>
+            <button class="nav-tab" onclick="scrollToFarmerSection('farmerOrdersSection')">📦 Buyer Orders</button>
+            <button class="nav-tab" onclick="scrollToFarmerSection('farmerAddCropSection')">➕ List Crop</button>
+            <button class="nav-tab" onclick="scrollToFarmerSection('farmerMandiSection')">📈 Mandi Rates</button>
         </nav>
 
         <div class="navbar-actions">
@@ -446,64 +455,181 @@
     <!-- Main App Container -->
     <div class="app-container">
 
-        <!-- FARMER VIEW SUMMARY (Visible when Farmer is logged in) -->
-        <div id="farmerPortalView" style="display:none; margin-bottom:24px;">
-            <div class="card panel-card" style="border-left: 5px solid #16a34a;">
+        <!-- ==================================================================
+             DEDICATED FARMER DASHBOARD (Exclusively for Farmer Role)
+             ================================================================== -->
+        <div id="farmerDashboardSection" style="display:none;">
+
+            <!-- Farmer Welcome & Farm Gate Header Banner -->
+            <div class="farmer-welcome-banner">
+                <div class="farmer-welcome-left">
+                    <div class="farmer-avatar">👨‍🌾</div>
+                    <div>
+                        <h2 id="farmerPortalWelcome">🌾 Welcome, Farmer!</h2>
+                        <p id="farmerPortalAddressSub" class="farmer-address-sub">Loading registered farm gate details...</p>
+                    </div>
+                </div>
+                <div class="farmer-badge-group">
+                    <span class="badge badge-verified">● Registered Producer</span>
+                    <span class="badge badge-db">SQLite Database Active</span>
+                </div>
+            </div>
+
+            <!-- Farmer Stock & Revenue KPI Strip -->
+            <div class="farmer-kpi-grid">
+                <div class="farmer-kpi-card">
+                    <div class="farmer-kpi-icon">🌾</div>
+                    <div class="farmer-kpi-data">
+                        <div class="farmer-kpi-title">Total Harvest Registered</div>
+                        <div class="farmer-kpi-value" id="farmerKpiHarvest">0 kg</div>
+                        <div class="farmer-kpi-meta">Across all your listed crops</div>
+                    </div>
+                </div>
+
+                <div class="farmer-kpi-card highlight-card">
+                    <div class="farmer-kpi-icon">📦</div>
+                    <div class="farmer-kpi-data">
+                        <div class="farmer-kpi-title">Quantity Ordered</div>
+                        <div class="farmer-kpi-value" id="farmerKpiOrdered">0 kg</div>
+                        <div class="farmer-kpi-meta">
+                            <span id="farmerKpiClearancePct" class="farmer-meta-badge">0% Ordered</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="farmer-kpi-card left-card">
+                    <div class="farmer-kpi-icon">⏳</div>
+                    <div class="farmer-kpi-data">
+                        <div class="farmer-kpi-title">Quantity Left</div>
+                        <div class="farmer-kpi-value" id="farmerKpiLeft">0 kg</div>
+                        <div class="farmer-kpi-meta">Available in farm storage</div>
+                    </div>
+                </div>
+
+                <div class="farmer-kpi-card revenue-card">
+                    <div class="farmer-kpi-icon">💰</div>
+                    <div class="farmer-kpi-data">
+                        <div class="farmer-kpi-title">Order Revenue & Valuation</div>
+                        <div class="farmer-kpi-value" id="farmerKpiRevenue">₹0</div>
+                        <div class="farmer-kpi-meta">Earned • <span id="farmerKpiRemainingVal">₹0</span> in stock</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section 1: My Commodities & Stock Inventory Table -->
+            <div class="card panel-card" id="farmerProduceSection" style="margin-bottom:24px;">
                 <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
                     <div>
-                        <h3 id="farmerPortalWelcome">🌾 Welcome, Farmer!</h3>
-                        <p class="section-desc" id="farmerPortalAddressSub">Your produce harvest batches are stored in the platform database.</p>
+                        <h3>🌾 My Commodities, Pricing & Stock Status</h3>
+                        <p class="section-desc">Track asking rates against Mandi benchmarks, quantity ordered, and quantity left in real-time.</p>
                     </div>
-                    <div style="display:flex; gap:10px;">
-                        <button class="btn-secondary" onclick="toggleAddMoreCropForm()">➕ Add Another Crop</button>
-                        <button class="btn-primary" onclick="showBuyerMarketplaceView()">🏢 View Crop Marketplace (Buyer View)</button>
+                    <div style="display:flex; gap:8px;">
+                        <button class="btn-secondary" onclick="scrollToFarmerSection('farmerOrdersSection')">📦 View Orders</button>
+                        <button class="btn-primary" style="padding:6px 14px; font-size:12.5px;" onclick="scrollToFarmerSection('farmerAddCropSection')">➕ List Crop</button>
                     </div>
                 </div>
 
-                <!-- Inline Add Another Crop Form (Toggled on demand) -->
-                <div id="inlineAddCropCard" style="display:none; background:#f8fafc; border:1px dashed var(--border-color); border-radius:var(--radius-sm); padding:16px; margin:14px 0;">
-                    <h4 style="margin-bottom:10px; font-size:14px;">➕ List Another Crop in Database</h4>
-                    <form onsubmit="handleInlineAddSupply(event)" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)) 140px; gap:10px; align-items:end;">
-                        <div>
-                            <label style="font-size:11px; font-weight:700;">Crop Name *</label>
-                            <input type="text" id="inlineCropName" list="commonCropsList" placeholder="e.g. Wheat, Tomato" required style="width:100%; padding:7px 10px; font-size:13px; border:1px solid #cbd5e1; border-radius:6px;">
-                        </div>
-                        <div>
-                            <label style="font-size:11px; font-weight:700;">Quantity (kg) *</label>
-                            <input type="number" id="inlineCropQty" step="any" placeholder="e.g. 3000" required style="width:100%; padding:7px 10px; font-size:13px; border:1px solid #cbd5e1; border-radius:6px;">
-                        </div>
-                        <div>
-                            <label style="font-size:11px; font-weight:700;">Price (₹/kg) *</label>
-                            <input type="number" id="inlineCropPrice" step="any" placeholder="e.g. 21.00" required style="width:100%; padding:7px 10px; font-size:13px; border:1px solid #cbd5e1; border-radius:6px;">
-                        </div>
-                        <button type="submit" class="btn-primary" style="padding:8px 12px; font-size:13px;">Save Crop</button>
-                    </form>
-                </div>
-
-                <div class="table-responsive" style="margin-top:10px;">
-                    <table class="data-table">
+                <div class="table-responsive" style="margin-top:14px;">
+                    <table class="data-table farmer-table">
                         <thead>
                             <tr>
-                                <th>Commodity</th>
-                                <th>Quantity (kg)</th>
+                                <th>Commodity & Grade</th>
                                 <th>Your Asking Rate</th>
                                 <th>Mandi Benchmark</th>
-                                <th>Batch Value</th>
-                                <th>Database Status</th>
+                                <th>Quantity Left</th>
+                                <th>Quantity Ordered</th>
+                                <th>Total Harvest & Status</th>
+                                <th>Value of Stock Left</th>
+                                <th>Action</th>
                             </tr>
                         </thead>
                         <tbody id="farmerProduceListBody">
                             <tr>
-                                <td colspan="6" class="text-center text-muted py-3">Loading your listed produce from database...</td>
+                                <td colspan="8" class="text-center text-muted py-4">Loading your listed commodities from database...</td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
             </div>
-        </div>
 
-        <!-- BUYER PORTAL VIEW (Visible for Buyer and accessible by Farmer) -->
-        <div id="buyerPortalView">
+            <!-- Section 2: Incoming Buyer Orders & Procurement Inquiries -->
+            <div class="card panel-card" id="farmerOrdersSection" style="margin-bottom:24px; border-top:4px solid #2563eb;">
+                <div class="card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+                    <div>
+                        <h3>📦 Incoming Buyer Orders & Supplier Details</h3>
+                        <p class="section-desc">See which buyers ordered your crops, contact details, quantity taken, and total payment. Filter by crop to view specific orders.</p>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <label for="farmerOrderCropFilter" style="font-size:12px; font-weight:700; color:#475569;">Select Crop:</label>
+                            <select id="farmerOrderCropFilter" onchange="onFarmerOrderCropFilterChange()" style="padding:7px 12px; font-size:12.5px; border-radius:8px; border:1px solid #cbd5e1; font-weight:600; background:#f8fafc;">
+                                <option value="">🌾 All Commodities</option>
+                            </select>
+                        </div>
+                        <button type="button" class="btn-secondary" onclick="clearFarmerOrderHistory()" title="Clear all order history" style="padding:7px 12px; font-size:12px; color:#b91c1c; border-color:#fecaca; background:#fff5f5; font-weight:600;">
+                            🧹 Clear History
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Live Orders List Container -->
+                <div id="farmerOrdersListContainer" style="margin-top:16px;">
+                    <div class="text-center text-muted py-4">Loading buyer orders from database...</div>
+                </div>
+            </div>
+
+            <!-- Section 3: Add Another Commodity -->
+            <div class="card panel-card" id="farmerAddCropSection" style="margin-bottom:24px; max-width:800px;">
+                <div class="card-header">
+                    <h3>➕ List Another Commodity</h3>
+                    <p class="section-desc">Manually enter a new crop to add to your farm gate catalog in the database.</p>
+                </div>
+                <form id="inlineAddCropForm" onsubmit="handleInlineAddSupply(event)" style="display:flex; flex-direction:column; gap:14px; margin-top:14px;">
+                    <div class="form-field">
+                        <label for="inlineCropName">Commodity / Crop Name <span class="req">*</span></label>
+                        <input type="text" id="inlineCropName" list="commonCropsList" placeholder="e.g. Wheat, Tomato, Mustard, Onion..." required>
+                    </div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                        <div class="form-field">
+                            <label for="inlineCropQty">Total Harvest Quantity (kg) <span class="req">*</span></label>
+                            <input type="number" id="inlineCropQty" step="any" placeholder="e.g. 5000" required>
+                        </div>
+                        <div class="form-field">
+                            <label for="inlineCropPrice">Your Asking Rate (₹/kg) <span class="req">*</span></label>
+                            <input type="number" id="inlineCropPrice" step="any" placeholder="e.g. 22.50" required>
+                        </div>
+                    </div>
+                    <div class="form-field">
+                        <label for="inlineCropGrade">Quality Grade</label>
+                        <select id="inlineCropGrade">
+                            <option value="Grade A">Grade A (Premium / Export Quality)</option>
+                            <option value="Grade B" selected>Grade B (Standard Market Quality)</option>
+                            <option value="Grade C">Grade C (Processing Quality)</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn-primary" style="margin-top:6px; padding:12px; max-width:280px;" id="inlineSaveCropBtn">
+                        🌾 Save Crop to Database
+                    </button>
+                </form>
+            </div>
+
+            <!-- Section 3: Mandi Daily Rate Guidance for Farmer -->
+            <div class="card panel-card" id="farmerMandiSection" style="margin-bottom:24px; border-left:4px solid #3b82f6;">
+                <div class="card-header">
+                    <h3>💡 Real-Time Mandi Benchmark Rate Intelligence</h3>
+                    <p class="section-desc">AgriConnect AI tracks official APMC Mandi rates across your state to help you set optimal prices without losing margin to middlemen.</p>
+                </div>
+                <div id="farmerMandiRatesContainer" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:14px; margin-top:14px;">
+                    <!-- Dynamically populated cards comparing farmer's crop vs mandi benchmark -->
+                </div>
+            </div>
+
+        </div> <!-- End #farmerDashboardSection -->
+
+        <!-- ==================================================================
+             DEDICATED BUYER DASHBOARD (Exclusively for Buyer Role)
+             ================================================================== -->
+        <div id="buyerDashboardSection" style="display:none;">
 
         <!-- Control Bar / Demand Input -->
         <section class="control-panel">
@@ -797,8 +923,8 @@
         <!-- TAB CONTENT 4: LOGISTICS & FULL MAP -->
         <div id="tab-logistics" class="tab-pane">
             <div class="card panel-card">
-                <div class="card-header">
-                    <div>
+                <div class="card-header" style="display: flex; justify-content: flex-end; align-items: center; margin-bottom: 8px;">
+                    <div style="display: none;">
                         <h3>Multi-Stop Collection Route Optimization (TSP)</h3>
                         <p class="section-desc">Nearest-Neighbor heuristic with 2-Opt local refinement to minimize deadhead transit and fuel burn</p>
                     </div>
@@ -869,9 +995,12 @@
                     <div class="card-header pb-2" style="display: flex; justify-content: space-between; align-items: center; padding: 0 0 12px 0;">
                         <div>
                             <h4>📜 Platform Procurement Order History</h4>
-                            <p class="section-desc">View executed orders, allocated volumes, and cancel orders to restore farmer stock</p>
+                            <p class="section-desc">View executed orders, allocated volumes, and clear history to keep your dashboard tidy</p>
                         </div>
-                        <button class="btn-sm" id="refreshOrdersBtn" onclick="loadOrderHistory(this)">🔄 Refresh History</button>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn-sm" id="refreshOrdersBtn" onclick="loadOrderHistory(this)">🔄 Refresh</button>
+                            <button class="btn-sm" style="color: #b91c1c; border-color: #fecaca; background: #fff5f5; font-weight: 600;" onclick="clearBuyerOrderHistory()">🧹 Clear Order History</button>
+                        </div>
                     </div>
                     <div class="table-responsive mt-2">
                         <table class="data-table" id="ordersHistoryTable">
@@ -987,7 +1116,7 @@
             </div>
         </div>
 
-        </div> <!-- End #buyerPortalView -->
+        </div> <!-- End #buyerDashboardSection -->
     </div> <!-- End .app-container -->
     </div> <!-- End #mainPlatformScreen -->
 

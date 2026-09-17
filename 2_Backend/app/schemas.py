@@ -87,6 +87,15 @@ class FarmerAddSupplyRequest(BaseModel):
     quality_grade: str = "Grade A"
 
 
+class FarmerClearStockRequest(BaseModel):
+    farmer_id: int
+    supply_id: int
+    cleared_quantity_kg: Optional[float] = Field(None, gt=0, description="Quantity cleared/ordered in kg")
+    ordered_quantity_kg: Optional[float] = Field(None, gt=0, description="Quantity ordered in kg")
+    selling_price_per_kg: Optional[float] = Field(None, gt=0, description="Actual realized/ordered price per kg")
+    notes: Optional[str] = Field(None, description="Buyer or order fulfillment note")
+
+
 class AuthResponse(BaseModel):
     status: str
     user_type: str  # "farmer" or "buyer"

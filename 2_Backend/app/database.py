@@ -1,7 +1,10 @@
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-DATABASE_URL = "sqlite:///./agriconnect.db"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DB_PATH = os.path.join(BASE_DIR, "agriconnect.db")
+DATABASE_URL = f"sqlite:///{DB_PATH.replace(os.sep, '/')}"
 
 engine = create_engine(
     DATABASE_URL,

@@ -1,8 +1,14 @@
-// AgriConnect AI - Frontend Application Core
+// Dynamically resolve Backend API Base URL:
+// - Cloud/Production (Render) or local uvicorn: use same origin (window.location.origin)
+// - VS Code Live Server (port 5500) or file://: point to local backend (http://127.0.0.1:8000)
+const isLiveServer = window.location.port === "5500";
+const isFileProtocol = window.location.protocol === "file:" || window.location.origin === "null";
 
-const API_BASE = window.location.origin.includes(":8000") 
-    ? window.location.origin 
-    : "http://127.0.0.1:8000";
+const API_BASE =
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1"
+        ? "http://127.0.0.1:8000"
+        : window.location.origin;
 
 let state = {
     products: [],

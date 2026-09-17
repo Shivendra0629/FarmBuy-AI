@@ -172,8 +172,43 @@ def fulfill_order(payload: OrderCreateRequest, db: Session = Depends(get_db)):
     if payload.agreed_price_per_kg <= 0:
         raise HTTPException(status_code=400, detail="agreed_price_per_kg must be greater than 0")
 
-    order_num = f"AGC-{datetime.utcnow().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
-    procurement_cost = payload.total_quantity * payload.agreed_price_per_kg
+    today_str = datetime.now().strftime('%Y%m%d')
+    today_orders_count = db.query(Order).filter(Order.order_number.like(f"FBA-{today_str}-%")).count()
+    seq_num = today_orders_count + 1
+    comb_letter = chr(ord('A') + ((seq_num - 1) % 26))
+    order_num = f"FBA-{today_str}-{seq_num}{comb_letter}"
+    while db.query(Order).filter(Order.order_number == order_num).first():
+        seq_num += 1
+        comb_letter = chr(ord('A') + ((seq_num - 1) % 26))
+        order_num = f"FBA-{today_str}-{seq_num}{comb_letter}"
+
+    # Calculate sum of individual farmer allocations (supports multi-farmer different negotiated rates)
+    farmer_item_details = []
+    total_produce_cost = 0.0
+
+    for alloc in payload.farmer_allocations:
+        f_id = alloc.get("farmer_id")
+        alloc_qty = float(alloc.get("matched_quantity", 0.0))
+        p_kg = alloc.get("expected_price")
+        if p_kg is None or float(p_kg) <= 0:
+            p_kg = payload.agreed_price_per_kg
+        p_kg = float(p_kg)
+        
+        farmer_obj = db.query(Farmer).filter(Farmer.id == f_id).first()
+        f_name = farmer_obj.name if farmer_obj else alloc.get("farmer_name", f"Farmer #{f_id}")
+        
+        subtot = round(alloc_qty * p_kg, 2)
+        total_produce_cost += subtot
+        farmer_item_details.append({
+            "farmer_id": f_id,
+            "farmer_name": f_name,
+            "quantity_kg": alloc_qty,
+            "price_per_kg": round(p_kg, 2),
+            "subtotal": subtot
+        })
+
+    procurement_cost = round(total_produce_cost, 2)
+    blended_rate = round(procurement_cost / payload.total_quantity, 2) if payload.total_quantity > 0 else payload.agreed_price_per_kg
 
     route_dist = 0.0
     if payload.route_summary and "total_distance_km" in payload.route_summary:
@@ -188,7 +223,7 @@ def fulfill_order(payload: OrderCreateRequest, db: Session = Depends(get_db)):
         buyer_name=payload.buyer_name,
         product_id=payload.product_id,
         total_quantity=payload.total_quantity,
-        agreed_price_per_kg=payload.agreed_price_per_kg,
+        agreed_price_per_kg=blended_rate,
         total_procurement_cost=procurement_cost,
         estimated_distance_km=route_dist,
         logistics_cost=logistics_cost,
@@ -199,40 +234,34 @@ def fulfill_order(payload: OrderCreateRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_order)
 
-    # Add OrderItems and optionally deduct from supplies
-    for alloc in payload.farmer_allocations:
-        f_id = alloc.get("farmer_id")
-        alloc_qty = alloc.get("matched_quantity", 0.0)
-        p_kg = alloc.get("expected_price")
-        if p_kg is None or p_kg <= 0:
-            p_kg = payload.agreed_price_per_kg
-        
+    for item_data in farmer_item_details:
         item = OrderItem(
             order_id=new_order.id,
-            farmer_id=f_id,
-            allocated_quantity=alloc_qty,
-            price_per_kg=round(p_kg, 2),
-            subtotal=round(alloc_qty * p_kg, 2)
+            farmer_id=item_data["farmer_id"],
+            allocated_quantity=item_data["quantity_kg"],
+            price_per_kg=item_data["price_per_kg"],
+            subtotal=item_data["subtotal"]
         )
         db.add(item)
 
         # Update available supply quantity and quantity ordered
         supply_record = db.query(Supply).filter(
-            Supply.farmer_id == f_id,
+            Supply.farmer_id == item_data["farmer_id"],
             Supply.product_id == payload.product_id
         ).first()
         if supply_record:
-            supply_record.quantity = max(0.0, supply_record.quantity - alloc_qty)
-            supply_record.cleared_quantity = (supply_record.cleared_quantity or 0.0) + alloc_qty
+            supply_record.quantity = max(0.0, supply_record.quantity - item_data["quantity_kg"])
+            supply_record.cleared_quantity = (supply_record.cleared_quantity or 0.0) + item_data["quantity_kg"]
 
     db.commit()
 
+    time_now_ampm = datetime.now().strftime("%I:%M %p")
     tracking = [
-        {"step": "Order Placed & Contract Token Generated", "status": "COMPLETED", "timestamp": datetime.utcnow().strftime("%H:%M UTC")},
+        {"step": "Order Placed & Contract Token Generated", "status": "COMPLETED", "timestamp": time_now_ampm},
         {"step": "Farmer Notification & Produce Reservation", "status": "IN_PROGRESS", "timestamp": "Immediate"},
-        {"step": "Fleet Dispatch (Nearest Collection Route)", "status": "PENDING", "timestamp": "Scheduled Tomorrow 05:00 AM"},
+        {"step": "Fleet Dispatch (Nearest Collection Route)", "status": "PENDING", "timestamp": "Tomorrow 05:00 AM"},
         {"step": "Quality Inspection at Farm Gate", "status": "PENDING", "timestamp": "At Pickup"},
-        {"step": "Aggregate Delivery to Buyer Depot", "status": "PENDING", "timestamp": "Expected 14:00 PM"}
+        {"step": "Aggregate Delivery to Buyer Depot", "status": "PENDING", "timestamp": "Expected 02:00 PM"}
     ]
 
     return {
@@ -241,14 +270,15 @@ def fulfill_order(payload: OrderCreateRequest, db: Session = Depends(get_db)):
         "buyer_name": payload.buyer_name,
         "product_name": product.name,
         "total_quantity": payload.total_quantity,
-        "agreed_price_per_kg": payload.agreed_price_per_kg,
-        "total_procurement_cost": round(procurement_cost, 2),
+        "agreed_price_per_kg": blended_rate,
+        "total_procurement_cost": procurement_cost,
         "logistics_distance_km": route_dist,
         "logistics_cost": logistics_cost,
         "grand_total": grand_total,
         "farmers_involved": len(payload.farmer_allocations),
-        "created_at": new_order.created_at.strftime("%Y-%m-%d %H:%M"),
-        "tracking_steps": tracking
+        "created_at": datetime.now().strftime("%Y-%m-%d %I:%M %p"),
+        "tracking_steps": tracking,
+        "farmer_items": farmer_item_details
     }
 
 
@@ -355,7 +385,7 @@ def get_orders(db: Session = Depends(get_db)):
             "logistics_cost": o.logistics_cost,
             "grand_total": round(o.total_procurement_cost + o.logistics_cost, 2),
             "status": o.status,
-            "created_at": o.created_at.strftime("%Y-%m-%d %H:%M") if o.created_at else "",
+            "created_at": o.created_at.strftime("%Y-%m-%d %I:%M %p") if o.created_at else "",
             "items": item_list
         })
     return results

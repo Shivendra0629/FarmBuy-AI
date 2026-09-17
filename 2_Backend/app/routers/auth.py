@@ -10,6 +10,7 @@ from ..schemas import (
     FarmerLoginRegisterRequest,
     BuyerLoginRegisterRequest,
     FarmerAddSupplyRequest,
+    FarmerUpdateSupplyRequest,
     FarmerClearStockRequest,
     AuthResponse,
     BuyerOut,
@@ -391,6 +392,55 @@ def add_farmer_supply(payload: FarmerAddSupplyRequest, db: Session = Depends(get
     return {
         "status": "success",
         "message": f"Added {payload.quantity_kg:,.0f} kg of {product.name} to {farmer.name}'s active catalog."
+    }
+
+
+@router.put("/farmer/supply/{supply_id}")
+@router.post("/farmer/supply/{supply_id}/update")
+def update_farmer_supply(
+    supply_id: int,
+    payload: FarmerUpdateSupplyRequest,
+    db: Session = Depends(get_db)
+):
+    """Allows a farmer to update their crop name, available quantity, and asking price."""
+    farmer = db.query(Farmer).filter(Farmer.id == payload.farmer_id).first()
+    if not farmer:
+        raise HTTPException(status_code=404, detail="Farmer not found")
+
+    supply = db.query(Supply).filter(
+        Supply.id == supply_id,
+        Supply.farmer_id == payload.farmer_id
+    ).first()
+    if not supply:
+        raise HTTPException(status_code=404, detail="Commodity supply record not found")
+
+    clean_comm = payload.commodity.strip()
+    product = db.query(Product).filter(Product.name.ilike(clean_comm)).first()
+    if not product:
+        product = Product(
+            name=clean_comm.capitalize(),
+            category="Agricultural Produce",
+            unit="kg",
+            mandi_benchmark_price=round(payload.price_per_kg * 1.05, 1),
+            perishability_days=14
+        )
+        db.add(product)
+        db.commit()
+        db.refresh(product)
+
+    supply.product_id = product.id
+    supply.quantity = payload.quantity_kg
+    supply.expected_price = payload.price_per_kg
+    if payload.quality_grade:
+        supply.quality_grade = payload.quality_grade
+
+    cleared = float(supply.cleared_quantity or 0.0)
+    supply.initial_quantity = max(float(supply.initial_quantity or 0.0), payload.quantity_kg + cleared)
+
+    db.commit()
+    return {
+        "status": "success",
+        "message": f"Successfully updated {product.name}: {payload.quantity_kg:,.0f} kg @ ₹{payload.price_per_kg:.2f}/kg."
     }
 
 

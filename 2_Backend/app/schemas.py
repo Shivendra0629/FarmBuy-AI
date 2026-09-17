@@ -87,6 +87,15 @@ class FarmerAddSupplyRequest(BaseModel):
     quality_grade: str = "Grade A"
 
 
+class FarmerUpdateSupplyRequest(BaseModel):
+    farmer_id: int
+    supply_id: int
+    commodity: str = Field(..., min_length=2, description="Crop or commodity name")
+    quantity_kg: float = Field(..., gt=0, description="Available quantity in kg")
+    price_per_kg: float = Field(..., gt=0, description="Desired asking price per kg (INR)")
+    quality_grade: Optional[str] = "Grade A"
+
+
 class FarmerClearStockRequest(BaseModel):
     farmer_id: int
     supply_id: int
@@ -301,3 +310,4 @@ class OrderResponse(BaseModel):
     farmers_involved: int
     created_at: str
     tracking_steps: List[Dict[str, Any]]
+    farmer_items: Optional[List[Dict[str, Any]]] = None

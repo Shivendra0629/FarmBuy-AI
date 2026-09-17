@@ -203,13 +203,15 @@ def fulfill_order(payload: OrderCreateRequest, db: Session = Depends(get_db)):
     for alloc in payload.farmer_allocations:
         f_id = alloc.get("farmer_id")
         alloc_qty = alloc.get("matched_quantity", 0.0)
-        p_kg = alloc.get("expected_price", payload.agreed_price_per_kg)
+        p_kg = alloc.get("expected_price")
+        if p_kg is None or p_kg <= 0:
+            p_kg = payload.agreed_price_per_kg
         
         item = OrderItem(
             order_id=new_order.id,
             farmer_id=f_id,
             allocated_quantity=alloc_qty,
-            price_per_kg=p_kg,
+            price_per_kg=round(p_kg, 2),
             subtotal=round(alloc_qty * p_kg, 2)
         )
         db.add(item)

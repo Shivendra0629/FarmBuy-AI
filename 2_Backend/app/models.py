@@ -32,7 +32,7 @@ class Buyer(Base):
     phone_number = Column(String, nullable=False)
     pincode = Column(String, nullable=False)
     state = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
 
 
 class Product(Base):
@@ -81,7 +81,7 @@ class Demand(Base):
     delivery_lat = Column(Float, default=22.5726)  # Default Kolkata Wholesale Hub
     delivery_lon = Column(Float, default=88.3639)
     max_target_price = Column(Float, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
 
     product = relationship("Product", back_populates="demands")
 
@@ -113,7 +113,7 @@ class Order(Base):
     logistics_cost = Column(Float, default=0.0)
     status = Column(String, default="CONFIRMED")  # CONFIRMED, DISPATCHED, COLLECTING, DELIVERED
     collection_route_json = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
 
     items = relationship("OrderItem", back_populates="order")
 

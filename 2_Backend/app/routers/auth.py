@@ -547,7 +547,7 @@ def get_farmer_orders(
             "price_per_kg": item.price_per_kg,
             "subtotal": item.subtotal,
             "status": ord_rec.status,
-            "created_at": ord_rec.created_at.strftime("%d %b %Y, %I:%M %p") if ord_rec.created_at else "Recently",
+            "created_at": ord_rec.created_at.strftime("%Y-%m-%d %I:%M %p") if ord_rec.created_at else "",
             "estimated_distance_km": ord_rec.estimated_distance_km
         })
 

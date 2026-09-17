@@ -228,7 +228,8 @@ def fulfill_order(payload: OrderCreateRequest, db: Session = Depends(get_db)):
         estimated_distance_km=route_dist,
         logistics_cost=logistics_cost,
         status="CONFIRMED",
-        collection_route_json=json.dumps(payload.route_summary) if payload.route_summary else "{}"
+        collection_route_json=json.dumps(payload.route_summary) if payload.route_summary else "{}",
+        created_at=datetime.now()
     )
     db.add(new_order)
     db.commit()

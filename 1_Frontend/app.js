@@ -22,6 +22,8 @@ let state = {
     miniMapLayers: [],
     fullMapLayers: [],
     forecastChart: null,
+    farmerForecastChart: null,
+    currentFarmerForecast: null,
     negotiatedPrices: {},
     farmerNegotiatedPrices: {}
 };
@@ -372,6 +374,25 @@ async function loadFarmerProduceList() {
             if (currentVal) {
                 cropFilter.value = currentVal;
             }
+        }
+
+        // 2B. Populate Farmer Forecast Crop Dropdown & Load Demand Prediction
+        const forecastCropSelect = document.getElementById("farmerForecastCropSelect");
+        if (forecastCropSelect) {
+            const currentSelected = forecastCropSelect.value;
+            let optionsHtml = "";
+            if (data.supplies && data.supplies.length > 0) {
+                optionsHtml = data.supplies.map(s => `<option value="${s.product_id}">🌾 ${s.product_name}</option>`).join("");
+            } else if (state.products && state.products.length > 0) {
+                optionsHtml = state.products.map(p => `<option value="${p.id}">🌾 ${p.name}</option>`).join("");
+            } else {
+                optionsHtml = `<option value="1">🌾 Tomato</option><option value="2">🌾 Potato</option><option value="3">🌾 Onion</option>`;
+            }
+            forecastCropSelect.innerHTML = optionsHtml;
+            if (currentSelected && forecastCropSelect.querySelector(`option[value="${currentSelected}"]`)) {
+                forecastCropSelect.value = currentSelected;
+            }
+            loadFarmerDemandForecast();
         }
 
         // 3. Render Commodities & Stock Table
@@ -1305,17 +1326,248 @@ function renderForecastChart(forecast) {
 
     // Update Trend Badge and Insights
     const trendBadge = document.getElementById("trendBadge");
-    trendBadge.textContent = forecast.trend_direction;
-    if (forecast.growth_percentage > 5) {
-        trendBadge.className = "badge badge-danger";
-    } else if (forecast.growth_percentage < -5) {
-        trendBadge.className = "badge badge-warning";
-    } else {
-        trendBadge.className = "badge badge-success";
+    if (trendBadge) {
+        trendBadge.textContent = forecast.trend_direction;
+        if (forecast.growth_percentage > 5) {
+            trendBadge.className = "badge badge-danger";
+        } else if (forecast.growth_percentage < -5) {
+            trendBadge.className = "badge badge-warning";
+        } else {
+            trendBadge.className = "badge badge-success";
+        }
     }
 
     const insightsList = document.getElementById("forecastInsightsList");
-    insightsList.innerHTML = forecast.insights.map(item => `<li>${item}</li>`).join("");
+    if (insightsList) {
+        insightsList.innerHTML = forecast.insights.map(item => `<li>${item}</li>`).join("");
+    }
+
+    // Update Buyer Supply Hub Quick Forecast Card
+    const quickCropName = document.getElementById("buyerQuickCropName");
+    if (quickCropName) {
+        quickCropName.textContent = forecast.product_name || "Selected Crop";
+    }
+    const totDemand = Math.round(forecast.forecast.reduce((acc, f) => acc + f.predicted_demand_kg, 0));
+    const quickDemand = document.getElementById("buyerQuick7DayDemand");
+    if (quickDemand) {
+        quickDemand.textContent = `${totDemand.toLocaleString()} kg`;
+    }
+    const quickGrowth = document.getElementById("buyerQuickGrowth");
+    if (quickGrowth) {
+        const sign = forecast.growth_percentage > 0 ? "+" : "";
+        quickGrowth.textContent = `${sign}${forecast.growth_percentage.toFixed(1)}%`;
+        quickGrowth.style.color = forecast.growth_percentage >= 0 ? "#15803d" : "#dc2626";
+    }
+    const quickBadge = document.getElementById("buyerQuickTrendBadge");
+    if (quickBadge) {
+        quickBadge.textContent = forecast.trend_direction;
+        if (forecast.growth_percentage > 5) {
+            quickBadge.className = "badge badge-success";
+        } else if (forecast.growth_percentage < -5) {
+            quickBadge.className = "badge badge-danger";
+        } else {
+            quickBadge.className = "badge badge-warning";
+        }
+    }
+}
+
+// 8B. Fetch and Render ML Demand Forecast for Farmer Dashboard
+async function loadFarmerDemandForecast() {
+    const cropSelect = document.getElementById("farmerForecastCropSelect");
+    if (!cropSelect) return;
+
+    let productId = parseInt(cropSelect.value, 10);
+    if (!productId || isNaN(productId)) {
+        if (state.products && state.products.length > 0) {
+            productId = state.products[0].id;
+        } else {
+            productId = 1;
+        }
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/api/demand/forecast`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                product_id: productId,
+                days_ahead: 7,
+                region: (state.currentUser && state.currentUser.location) ? state.currentUser.location : "Kolkata Metro Hub"
+            })
+        });
+
+        if (!res.ok) {
+            console.warn("Farmer demand forecast fetch failed:", res.status);
+            return;
+        }
+
+        const forecast = await res.json();
+        state.currentFarmerForecast = forecast;
+        renderFarmerForecastChart(forecast);
+    } catch (err) {
+        console.error("Error loading farmer demand forecast:", err);
+    }
+}
+
+function onFarmerForecastCropChange() {
+    loadFarmerDemandForecast();
+}
+
+function renderFarmerForecastChart(forecast) {
+    const ctx = document.getElementById('farmerForecastChart');
+    if (!ctx || typeof Chart === "undefined") return;
+
+    if (state.farmerForecastChart) {
+        state.farmerForecastChart.destroy();
+    }
+
+    const histLabels = forecast.historical_data.map(d => d.date.slice(5));
+    const histValues = forecast.historical_data.map(d => d.quantity_demanded);
+
+    const foreLabels = forecast.forecast.map(d => d.date.slice(5));
+    const foreValues = forecast.forecast.map(d => d.predicted_demand_kg);
+    const upperBounds = forecast.forecast.map(d => d.upper_bound_kg);
+    const lowerBounds = forecast.forecast.map(d => d.lower_bound_kg);
+
+    const allLabels = [...histLabels, ...foreLabels];
+    const histDataExtended = [...histValues, ...Array(foreLabels.length).fill(null)];
+    const foreDataExtended = [
+        ...Array(histLabels.length - 1).fill(null),
+        histValues[histValues.length - 1],
+        ...foreValues
+    ];
+    const upperExtended = [
+        ...Array(histLabels.length - 1).fill(null),
+        histValues[histValues.length - 1],
+        ...upperBounds
+    ];
+    const lowerExtended = [
+        ...Array(histLabels.length - 1).fill(null),
+        histValues[histValues.length - 1],
+        ...lowerBounds
+    ];
+
+    state.farmerForecastChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: allLabels,
+            datasets: [
+                {
+                    label: 'Historical Mandi Demand (kg/day)',
+                    data: histDataExtended,
+                    borderColor: '#64748b',
+                    backgroundColor: 'rgba(100, 116, 139, 0.1)',
+                    borderWidth: 2,
+                    pointRadius: 3,
+                    tension: 0.3
+                },
+                {
+                    label: 'ML Projected Demand Trajectory (7-Day)',
+                    data: foreDataExtended,
+                    borderColor: '#16a34a',
+                    backgroundColor: 'rgba(22, 163, 74, 0.1)',
+                    borderWidth: 3,
+                    pointRadius: 4,
+                    pointBackgroundColor: '#16a34a',
+                    borderDash: [5, 5],
+                    tension: 0.3
+                },
+                {
+                    label: 'Upper Peak Demand Band (95%)',
+                    data: upperExtended,
+                    borderColor: 'rgba(34, 197, 94, 0.3)',
+                    borderDash: [2, 2],
+                    borderWidth: 1,
+                    pointRadius: 0,
+                    fill: '+1',
+                    backgroundColor: 'rgba(34, 197, 94, 0.08)'
+                },
+                {
+                    label: 'Lower Demand Baseline (95%)',
+                    data: lowerExtended,
+                    borderColor: 'rgba(34, 197, 94, 0.3)',
+                    borderDash: [2, 2],
+                    borderWidth: 1,
+                    pointRadius: 0,
+                    fill: false
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            if (context.raw !== null) {
+                                return `${context.dataset.label}: ${context.raw.toLocaleString()} kg`;
+                            }
+                            return null;
+                        }
+                    }
+                },
+                legend: {
+                    position: 'top',
+                    labels: { boxWidth: 12, font: { family: 'Inter', size: 12 } }
+                }
+            },
+            scales: {
+                y: {
+                    title: { display: true, text: 'Buyer Demand Volume (kg)' },
+                    grid: { color: '#f1f5f9' }
+                },
+                x: { grid: { color: '#f8fafc' } }
+            }
+        }
+    });
+
+    // Update KPI indicators
+    const totDemandFarmer = Math.round(forecast.forecast.reduce((acc, f) => acc + f.predicted_demand_kg, 0));
+    const dailyAvgFarmer = Math.round(totDemandFarmer / (forecast.forecast.length || 7));
+
+    const totDemandEl = document.getElementById("farmerForecastTotalDemand");
+    if (totDemandEl) totDemandEl.textContent = `${totDemandFarmer.toLocaleString()} kg`;
+
+    const dailyAvgEl = document.getElementById("farmerForecastDailyAvg");
+    if (dailyAvgEl) dailyAvgEl.textContent = `Avg: ${dailyAvgFarmer.toLocaleString()} kg / day`;
+
+    const growthEl = document.getElementById("farmerForecastGrowthPct");
+    if (growthEl) {
+        const sign = forecast.growth_percentage > 0 ? "+" : "";
+        growthEl.textContent = `${sign}${forecast.growth_percentage.toFixed(1)}%`;
+        growthEl.style.color = forecast.growth_percentage >= 0 ? "#15803d" : "#dc2626";
+    }
+
+    const trendBadge = document.getElementById("farmerTrendBadge");
+    if (trendBadge) {
+        trendBadge.textContent = forecast.trend_direction;
+        if (forecast.growth_percentage > 5) {
+            trendBadge.className = "badge badge-success";
+        } else if (forecast.growth_percentage < -5) {
+            trendBadge.className = "badge badge-danger";
+        } else {
+            trendBadge.className = "badge badge-warning";
+        }
+    }
+
+    // Farmer-tailored AI Harvesting & Selling advice
+    const insightsList = document.getElementById("farmerForecastInsightsList");
+    if (insightsList) {
+        const cropName = forecast.product_name || "Commodity";
+        const farmerInsights = [
+            forecast.growth_percentage > 5
+                ? `🚀 <strong>Demand Surging (+${forecast.growth_percentage.toFixed(1)}%):</strong> Buyer procurement inquiries for ${cropName} are expanding. High pricing leverage available — do not discount below Mandi benchmark.`
+                : (forecast.growth_percentage < -5 
+                    ? `📉 <strong>Demand Cooling (${forecast.growth_percentage.toFixed(1)}%):</strong> Regional demand expected to soften over the coming week. Accelerate dispatch of ready harvest to avoid quality loss.`
+                    : `⚖️ <strong>Balanced Market Demand:</strong> Steady wholesale consumption expected (~${dailyAvgFarmer.toLocaleString()} kg/day). Maintain regular harvest cycles.`),
+            `📅 <strong>Total 7-Day Market Absorption:</strong> Bulk buyers and retail aggregators are projected to source ~<strong>${totDemandFarmer.toLocaleString()} kg</strong> of ${cropName}.`,
+            `💡 <strong>Harvest Timing Strategy:</strong> ${forecast.insights && forecast.insights.length > 0 ? forecast.insights[0] : "Harvest within 24 hours of collection route dispatch to guarantee zero transit spoilage."}`,
+            `🔒 <strong>Guaranteed Clearance:</strong> Keep your listed quantity updated in AgriConnect so algorithmic TSP collection routes pick up directly from your farm gate.`
+        ];
+        insightsList.innerHTML = farmerInsights.map(item => `<li>${item}</li>`).join("");
+    }
 }
 
 // 9. Render Price Intelligence
@@ -2128,3 +2380,5 @@ window.openEditProduceModal = openEditProduceModal;
 window.closeEditProduceModal = closeEditProduceModal;
 window.submitFarmerProduceUpdate = submitFarmerProduceUpdate;
 window.onIndividualFarmerRateChange = onIndividualFarmerRateChange;
+window.loadFarmerDemandForecast = loadFarmerDemandForecast;
+window.onFarmerForecastCropChange = onFarmerForecastCropChange;

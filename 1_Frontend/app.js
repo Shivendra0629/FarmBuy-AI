@@ -21,7 +21,8 @@ let state = {
     fullMap: null,
     miniMapLayers: [],
     fullMapLayers: [],
-    forecastChart: null
+    forecastChart: null,
+    negotiatedPrices: {}
 };
 
 // Buyer Hub coordinates resolution (Kolkata Wholesale Hub or Howrah Cold Chain)
@@ -743,6 +744,30 @@ function switchTab(tabId) {
     if (tabId === "contracts") {
         loadOrderHistory();
     }
+
+    if (tabId === "dashboard") {
+        applyNegotiatedPriceUI();
+    }
+
+    if (tabId === "pricing") {
+        const prodSelect = document.getElementById("productSelect");
+        if (prodSelect) {
+            const pId = parseInt(prodSelect.value, 10);
+            const negInfo = (state.negotiatedPrices && state.negotiatedPrices[pId]) ? state.negotiatedPrices[pId] : null;
+            const actionCard = document.getElementById("negAgreedActionCard");
+            if (negInfo && actionCard) {
+                actionCard.style.display = "block";
+                const priceEl = document.getElementById("negAgreedPriceDisplay");
+                const savEl = document.getElementById("negAgreedSavingsDisplay");
+                if (priceEl) priceEl.textContent = `₹${negInfo.negotiatedPrice.toFixed(2)}`;
+                if (savEl) {
+                    savEl.textContent = negInfo.savingsPerKg > 0 
+                        ? `Saved ₹${negInfo.savingsPerKg.toFixed(2)}/kg vs Asking Rate (Total Savings: ₹${negInfo.totalSavings.toLocaleString()})`
+                        : `Fair market rate agreed with farmers (₹${negInfo.negotiatedPrice.toFixed(2)}/kg)`;
+                }
+            }
+        }
+    }
 }
 
 // 4. Initialize Leaflet Maps
@@ -800,6 +825,7 @@ function onProductChange() {
     demandParamsTimeout = setTimeout(() => {
         BUYER_HUB = getBuyerHub();
         runCompleteAnalysis();
+        applyNegotiatedPriceUI();
     }, 200);
 }
 
@@ -909,6 +935,7 @@ async function runCompleteAnalysis() {
         // Update UI components safely
         updateKPIs(matching, priceInsight, routeData);
         renderFarmerMatchTable(matching);
+        applyNegotiatedPriceUI();
         renderForecastChart(forecast);
         renderPriceIntelligence(priceInsight);
         if (routeData) {
@@ -957,8 +984,16 @@ function updateKPIs(matching, priceInsight, route) {
         document.getElementById("kpiShortageSub").textContent = "✅ 100% Demand satisfied";
     }
 
-    document.getElementById("kpiPrice").textContent = `₹${matching.blended_price_per_kg.toFixed(2)} / kg`;
-    document.getElementById("kpiMandiBenchmark").textContent = `Govt Mandi: ₹${priceInsight.mandi_benchmark_price.toFixed(2)}`;
+    const productId = matching.product_id;
+    const negInfo = (state.negotiatedPrices && state.negotiatedPrices[productId]) ? state.negotiatedPrices[productId] : null;
+
+    if (negInfo) {
+        document.getElementById("kpiPrice").innerHTML = `₹${negInfo.negotiatedPrice.toFixed(2)} <span style="font-size:12px; font-weight:700; color:#16a34a;">🤝 (Negotiated)</span>`;
+        document.getElementById("kpiMandiBenchmark").innerHTML = `<span style="color:#16a34a; font-weight:600;">Negotiated Rate Active</span> (Ask: ₹${matching.blended_price_per_kg.toFixed(2)})`;
+    } else {
+        document.getElementById("kpiPrice").textContent = `₹${matching.blended_price_per_kg.toFixed(2)} / kg`;
+        document.getElementById("kpiMandiBenchmark").textContent = `Govt Mandi: ₹${priceInsight.mandi_benchmark_price.toFixed(2)}`;
+    }
 
     if (route) {
         document.getElementById("kpiDistance").textContent = `${route.total_distance_km} km`;
@@ -1011,25 +1046,40 @@ function renderFarmerMatchTable(matching) {
         return;
     }
 
-    tbody.innerHTML = matching.farmers.map(f => `
-        <tr>
-            <td>
-                <strong>${f.farmer_name}</strong>
-                <div class="text-muted" style="font-size:11.5px;">⭐ ${f.rating} • ${f.contact || "Verified"}</div>
-            </td>
-            <td>${f.location}</td>
-            <td><span class="badge" style="background:#f1f5f9;">${f.quality_grade}</span></td>
-            <td>
-                <strong>${f.matched_quantity.toLocaleString()} kg</strong>
-                <div class="text-muted" style="font-size:11px;">of ${f.available_quantity.toLocaleString()} kg avail</div>
-            </td>
-            <td>₹${f.expected_price.toFixed(2)} / kg</td>
-            <td>${f.distance_km} km</td>
-            <td><strong>₹${f.subtotal.toLocaleString()}</strong></td>
-        </tr>
-    `).join("");
+    const productId = matching.product_id;
+    const negInfo = (state.negotiatedPrices && state.negotiatedPrices[productId]) ? state.negotiatedPrices[productId] : null;
 
-    document.getElementById("summaryTotalCost").textContent = `₹${matching.total_estimated_cost.toLocaleString()}`;
+    tbody.innerHTML = matching.farmers.map(f => {
+        const unitRate = negInfo ? negInfo.negotiatedPrice : f.expected_price;
+        const subtotal = Math.round(f.matched_quantity * unitRate * 100) / 100;
+        const priceDisplay = negInfo 
+            ? `₹${unitRate.toFixed(2)} / kg <span class="badge badge-success" style="font-size:10px; margin-left:3px;">Negotiated</span>`
+            : `₹${unitRate.toFixed(2)} / kg`;
+
+        return `
+            <tr>
+                <td>
+                    <strong>${f.farmer_name}</strong>
+                    <div class="text-muted" style="font-size:11.5px;">⭐ ${f.rating} • ${f.contact || "Verified"}</div>
+                </td>
+                <td>${f.location}</td>
+                <td><span class="badge" style="background:#f1f5f9;">${f.quality_grade}</span></td>
+                <td>
+                    <strong>${f.matched_quantity.toLocaleString()} kg</strong>
+                    <div class="text-muted" style="font-size:11px;">of ${f.available_quantity.toLocaleString()} kg avail</div>
+                </td>
+                <td>${priceDisplay}</td>
+                <td>${f.distance_km} km</td>
+                <td><strong>₹${subtotal.toLocaleString()}</strong></td>
+            </tr>
+        `;
+    }).join("");
+
+    const totalCost = negInfo 
+        ? Math.round(matching.matched_quantity * negInfo.negotiatedPrice * 100) / 100
+        : matching.total_estimated_cost;
+
+    document.getElementById("summaryTotalCost").textContent = `₹${totalCost.toLocaleString()}`;
     document.getElementById("summaryFarmerCount").textContent = `${matching.farmers.length} Local Farmers`;
 }
 
@@ -1253,9 +1303,117 @@ async function simulateNegotiationOffer() {
             </div>
         `).join("");
 
+        // Determine agreed price based on negotiation evaluation
+        const origBlended = (state.currentMatching && state.currentMatching.blended_price_per_kg)
+            ? state.currentMatching.blended_price_per_kg
+            : (neg.average_asking_price || targetPrice);
+
+        let agreedPrice = targetPrice;
+        if (neg.farmer_acceptance_likelihood === "HIGH") {
+            agreedPrice = neg.target_price;
+        } else if (neg.farmer_acceptance_likelihood === "MODERATE") {
+            agreedPrice = neg.recommended_counter_offer;
+        } else {
+            agreedPrice = neg.recommended_counter_offer;
+        }
+
+        const savingsPerKg = Math.max(0, origBlended - agreedPrice);
+        const totalSavings = Math.round(savingsPerKg * quantity);
+
+        if (!state.negotiatedPrices) state.negotiatedPrices = {};
+        state.negotiatedPrices[productId] = {
+            negotiatedPrice: agreedPrice,
+            targetPrice: neg.target_price,
+            counterOffer: neg.recommended_counter_offer,
+            likelihood: neg.farmer_acceptance_likelihood,
+            originalBlendedPrice: origBlended,
+            savingsPerKg: savingsPerKg,
+            totalSavings: totalSavings,
+            quantity: quantity,
+            productName: (state.currentMatching ? state.currentMatching.product_name : "Crop")
+        };
+
+        // Render Applied Negotiated Card in Tab 3
+        const actionCard = document.getElementById("negAgreedActionCard");
+        if (actionCard) {
+            actionCard.style.display = "block";
+            const priceEl = document.getElementById("negAgreedPriceDisplay");
+            const savEl = document.getElementById("negAgreedSavingsDisplay");
+            if (priceEl) priceEl.textContent = `₹${agreedPrice.toFixed(2)}`;
+            if (savEl) {
+                savEl.textContent = savingsPerKg > 0 
+                    ? `Saved ₹${savingsPerKg.toFixed(2)}/kg vs Asking Rate (Total Savings: ₹${totalSavings.toLocaleString()})`
+                    : `Fair market rate agreed with farmers (₹${agreedPrice.toFixed(2)}/kg)`;
+            }
+        }
+
+        // Apply immediately to the main dashboard UI
+        applyNegotiatedPriceUI();
+
+        showNotification(`🤝 Negotiated rate of ₹${agreedPrice.toFixed(2)}/kg locked! Return to Main Page to place order.`);
+
     } catch (err) {
         console.error("Error evaluating negotiation:", err);
     }
+}
+
+// 10B. Apply Negotiated Price to Main Page UI
+function applyNegotiatedPriceUI() {
+    const prodSelect = document.getElementById("productSelect");
+    if (!prodSelect) return;
+    const productId = parseInt(prodSelect.value, 10);
+    const banner = document.getElementById("negotiatedAlertBanner");
+    const negInfo = (state.negotiatedPrices && state.negotiatedPrices[productId]) ? state.negotiatedPrices[productId] : null;
+
+    if (negInfo) {
+        if (banner) {
+            banner.style.display = "block";
+            const priceEl = document.getElementById("bannerNegotiatedPrice");
+            const savingsEl = document.getElementById("bannerSavingsBadge");
+            const origEl = document.getElementById("bannerOriginalPrice");
+            if (priceEl) priceEl.textContent = negInfo.negotiatedPrice.toFixed(2);
+            if (savingsEl) savingsEl.textContent = `Saved ₹${negInfo.savingsPerKg.toFixed(2)}/kg`;
+            if (origEl) origEl.textContent = negInfo.originalBlendedPrice.toFixed(2);
+        }
+    } else {
+        if (banner) banner.style.display = "none";
+    }
+
+    if (state.currentMatching && state.currentPriceInsight) {
+        updateKPIs(state.currentMatching, state.currentPriceInsight, state.currentRoute);
+        renderFarmerMatchTable(state.currentMatching);
+    }
+}
+
+// 10C. Clear Negotiated Rate and Revert to Original Asking Price
+function clearNegotiatedPrice(prodId = null) {
+    const id = prodId || parseInt(document.getElementById("productSelect").value, 10);
+    if (state.negotiatedPrices && state.negotiatedPrices[id]) {
+        delete state.negotiatedPrices[id];
+    }
+    const banner = document.getElementById("negotiatedAlertBanner");
+    if (banner) banner.style.display = "none";
+    const actionCard = document.getElementById("negAgreedActionCard");
+    if (actionCard) actionCard.style.display = "none";
+
+    if (state.currentMatching && state.currentPriceInsight) {
+        updateKPIs(state.currentMatching, state.currentPriceInsight, state.currentRoute);
+        renderFarmerMatchTable(state.currentMatching);
+    }
+    showNotification("Negotiated price cleared. Standard asking price restored.");
+}
+
+// 10D. Apply and Switch Back to Main Dashboard to Place Order
+function applyAndGoToOrder() {
+    switchTab('dashboard');
+    applyNegotiatedPriceUI();
+    showNotification("🤝 Negotiated price applied! Click 'Lock & Generate Procurement Contract' to place order.");
+    setTimeout(() => {
+        const btn = document.getElementById("generateContractBtn");
+        if (btn) {
+            btn.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+    }, 250);
 }
 
 // 11. Render Route on Leaflet Maps
@@ -1373,14 +1531,30 @@ async function generateProcurementContract() {
 
     const productId = parseInt(document.getElementById("productSelect").value, 10);
     const quantity = state.currentMatching.matched_quantity;
-    const agreedPrice = state.currentMatching.blended_price_per_kg;
+
+    // Check if a negotiated rate was established in Price Intelligence
+    const negInfo = (state.negotiatedPrices && state.negotiatedPrices[productId]) 
+        ? state.negotiatedPrices[productId] 
+        : null;
+    const agreedPrice = negInfo ? negInfo.negotiatedPrice : state.currentMatching.blended_price_per_kg;
+
+    const buyerName = (state.currentUser && state.currentUser.name) 
+        ? state.currentUser.name 
+        : (BUYER_HUB.name || "Verified Wholesale Buyer");
+
+    // Deep copy farmer allocations and update unit price if negotiated
+    const allocations = state.currentMatching.farmers.map(f => ({
+        ...f,
+        expected_price: agreedPrice,
+        subtotal: Math.round(f.matched_quantity * agreedPrice * 100) / 100
+    }));
 
     const payload = {
-        buyer_name: BUYER_HUB.name,
+        buyer_name: buyerName,
         product_id: productId,
         total_quantity: quantity,
         agreed_price_per_kg: agreedPrice,
-        farmer_allocations: state.currentMatching.farmers,
+        farmer_allocations: allocations,
         route_summary: state.currentRoute
     };
 
@@ -1392,7 +1566,7 @@ async function generateProcurementContract() {
         });
 
         const order = await res.json();
-        renderOrderContract(order);
+        renderOrderContract(order, negInfo);
         switchTab('contracts');
         loadOrderHistory();
         // Update supply analysis in the background so current stock updates
@@ -1406,8 +1580,13 @@ async function generateProcurementContract() {
 }
 
 // 13. Render Order Contract
-function renderOrderContract(order) {
+function renderOrderContract(order, negInfo = null) {
     const area = document.getElementById("orderConfirmationArea");
+    const isNegotiated = Boolean(negInfo) || (state.negotiatedPrices && Object.values(state.negotiatedPrices).some(np => Math.abs(np.negotiatedPrice - order.agreed_price_per_kg) < 0.05));
+    const rateBadge = isNegotiated 
+        ? `<div style="margin-top:3px;"><span class="badge badge-success" style="font-size:10px; font-weight:700;">🤝 NEGOTIATED CONTRACT RATE</span></div>` 
+        : '';
+
     area.innerHTML = `
         <div class="order-contract-box">
             <div class="contract-header">
@@ -1433,8 +1612,9 @@ function renderOrderContract(order) {
                     <span class="val green" style="font-size:16px;">${order.total_quantity.toLocaleString()} kg ${order.product_name}</span>
                 </div>
                 <div class="price-stat-box">
-                    <span class="label">Blended Price</span>
+                    <span class="label">Agreed Unit Rate</span>
                     <span class="val" style="font-size:16px;">₹${order.agreed_price_per_kg.toFixed(2)} / kg</span>
+                    ${rateBadge}
                 </div>
                 <div class="price-stat-box">
                     <span class="label">Participating Smallholders</span>
@@ -1716,3 +1896,6 @@ window.onProductChange = onProductChange;
 window.switchTab = switchTab;
 window.generateProcurementContract = generateProcurementContract;
 window.simulateNegotiationOffer = simulateNegotiationOffer;
+window.applyAndGoToOrder = applyAndGoToOrder;
+window.clearNegotiatedPrice = clearNegotiatedPrice;
+window.applyNegotiatedPriceUI = applyNegotiatedPriceUI;

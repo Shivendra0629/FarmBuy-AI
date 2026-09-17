@@ -736,6 +736,29 @@
 
         <!-- TAB CONTENT 1: DASHBOARD / OVERVIEW -->
         <div id="tab-dashboard" class="tab-pane active">
+            <!-- Negotiated Rate Alert Banner -->
+            <div id="negotiatedAlertBanner" style="display:none; background: #ecfdf5; border: 1.5px solid #6ee7b7; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; box-shadow: 0 2px 6px rgba(16, 185, 129, 0.08);">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <span style="font-size: 24px;">🤝</span>
+                        <div>
+                            <div style="color: #065f46; font-weight: 700; font-size: 14.5px; display: flex; align-items: center; gap: 8px;">
+                                Negotiated Order Rate Active: ₹<span id="bannerNegotiatedPrice">0.00</span> / kg
+                                <span class="badge badge-success" style="font-size: 11px; padding: 3px 8px;" id="bannerSavingsBadge">Saved ₹0.00/kg</span>
+                            </div>
+                            <div style="color: #047857; font-size: 12px; margin-top: 2px;">
+                                Price intelligence agreement applied! Placing this procurement contract will execute at this negotiated rate instead of the asking rate (₹<span id="bannerOriginalPrice">0.00</span>/kg).
+                            </div>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button type="button" class="btn-sm" style="background: #ffffff; color: #b91c1c; border: 1px solid #fca5a5; font-size: 12px; font-weight: 600; padding: 5px 12px; cursor: pointer;" onclick="clearNegotiatedPrice()">
+                            ✕ Revert to Asking Price
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <div class="dashboard-grid">
                 
                 <!-- Left Column: Matched Farmers & Allocations -->
@@ -914,6 +937,27 @@
                         <h5 class="mt-3 mb-2">Simulated Individual Farmer Responses:</h5>
                         <div class="farmer-quotes" id="farmerQuotesList">
                             <!-- Populated dynamically -->
+                        </div>
+
+                        <!-- Applied Negotiated Price Card -->
+                        <div id="negAgreedActionCard" style="display:none; margin-top:18px; padding:16px; background:#f0fdf4; border:2px solid #86efac; border-radius:8px; text-align:center;">
+                            <div style="display:flex; justify-content:center; align-items:center; gap:8px; margin-bottom:4px;">
+                                <span style="font-size:22px;">🤝</span>
+                                <span style="font-weight:700; color:#166534; font-size:16px;">
+                                    Negotiated Rate Active: <strong id="negAgreedPriceDisplay" style="color:#15803d; font-size:20px;">₹0.00</strong> / kg
+                                </span>
+                            </div>
+                            <p id="negAgreedSavingsDisplay" style="font-size:13px; color:#15803d; margin:0 0 12px 0;">
+                                Total Estimated Savings: ₹0.00
+                            </p>
+                            <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+                                <button type="button" class="btn-primary" style="background:#16a34a; padding:9px 20px; font-size:13.5px; display:inline-flex; align-items:center; gap:6px; cursor:pointer;" onclick="applyAndGoToOrder()">
+                                    🛒 Return to Main Page & Place Order with this Price ➔
+                                </button>
+                                <button type="button" class="btn-sm" style="background:#ffffff; color:#b91c1c; border:1px solid #fca5a5; padding:8px 14px; font-size:12.5px; cursor:pointer;" onclick="clearNegotiatedPrice()">
+                                    ✕ Revert to Standard Rate
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

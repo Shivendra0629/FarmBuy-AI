@@ -2,7 +2,6 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from datetime import date, timedelta
 import numpy as np
-from sklearn.linear_model import LinearRegression
 from typing import Dict, Any, List
 
 from ..models import DemandHistory, Product
@@ -59,21 +58,25 @@ def get_demand_forecast(
             for rec in history_records[-30:]  # Last 30 days
         ]
 
-    # Prepare for regression
+    # Prepare for regression - Analytical OLS (zero SciPy / OpenBLAS deadlock risk)
     n = len(history_list)
-    y = np.array([item["quantity_demanded"] for item in history_list])
-    X = np.arange(1, n + 1).reshape(-1, 1)
+    y = np.array([item["quantity_demanded"] for item in history_list], dtype=float)
+    x = np.arange(1, n + 1, dtype=float)
 
-    model = LinearRegression()
-    model.fit(X, y)
+    x_mean = float(np.mean(x))
+    y_mean = float(np.mean(y))
+    denom = float(np.sum((x - x_mean) ** 2))
+    slope = float(np.sum((x - x_mean) * (y - y_mean)) / denom) if denom != 0 else 0.0
+    intercept = float(y_mean - slope * x_mean)
 
     # Compute residuals for confidence interval
-    residuals = y - model.predict(X)
+    fitted_y = slope * x + intercept
+    residuals = y - fitted_y
     std_err = float(np.std(residuals)) if len(residuals) > 1 else 150.0
 
     # Project future days
-    future_X = np.arange(n + 1, n + days_ahead + 1).reshape(-1, 1)
-    raw_predictions = model.predict(future_X)
+    future_x = np.arange(n + 1, n + days_ahead + 1, dtype=float)
+    raw_predictions = slope * future_x + intercept
 
     # Compute day of week seasonality adjustments
     forecast_items = []

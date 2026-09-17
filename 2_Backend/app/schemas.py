@@ -33,9 +33,71 @@ class FarmerBase(BaseModel):
 
 class FarmerOut(FarmerBase):
     id: int
+    address: Optional[str] = None
+    pincode: Optional[str] = None
 
     class Config:
         from_attributes = True
+
+
+# Buyer Schemas
+class BuyerBase(BaseModel):
+    name: str
+    address: str
+    city: Optional[str] = ""
+    phone_number: str
+    pincode: str
+    state: str = "West Bengal"
+
+
+class BuyerOut(BuyerBase):
+    id: int
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+# Auth & Login Request Schemas
+class FarmerLoginRegisterRequest(BaseModel):
+    name: str = Field(..., min_length=2, description="Farmer full name")
+    address: str = Field(..., min_length=2, description="Village, town, or street address")
+    phone_number: str = Field(..., min_length=6, description="Contact phone number")
+    commodity: str = Field(..., min_length=2, description="Crop or commodity name (e.g. Potato, Tomato, Wheat)")
+    quantity_kg: float = Field(..., gt=0, description="Available quantity in kg")
+    price_per_kg: float = Field(..., gt=0, description="Farmer desired price per kg (INR)")
+    pincode: str = Field(..., min_length=4, description="Area postal pincode")
+    state: str = Field("West Bengal", min_length=2, description="State name")
+
+
+class BuyerLoginRegisterRequest(BaseModel):
+    name: str = Field(..., min_length=2, description="Buyer or company name")
+    address: str = Field(..., min_length=2, description="Delivery or warehouse address")
+    city: Optional[str] = Field("", description="City or district name")
+    phone_number: str = Field(..., min_length=6, description="Contact phone number")
+    pincode: str = Field(..., min_length=4, description="Area postal pincode")
+    state: str = Field("West Bengal", min_length=2, description="State name")
+
+
+class FarmerAddSupplyRequest(BaseModel):
+    farmer_id: int
+    commodity: str
+    quantity_kg: float
+    price_per_kg: float
+    quality_grade: str = "Grade A"
+
+
+class AuthResponse(BaseModel):
+    status: str
+    user_type: str  # "farmer" or "buyer"
+    user_id: int
+    name: str
+    phone_number: Optional[str] = None
+    address: str
+    pincode: str
+    state: str
+    message: str
+    details: Optional[Dict[str, Any]] = None
 
 
 # Supply Schemas

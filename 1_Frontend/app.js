@@ -6,6 +6,7 @@ const API_BASE = window.location.origin.includes(":8000")
 
 let state = {
     products: [],
+    currentUser: null,
     currentMatching: null,
     currentForecast: null,
     currentPriceInsight: null,
@@ -42,11 +43,366 @@ document.addEventListener("DOMContentLoaded", async () => {
     await checkBackendStatus();
     await loadProducts();
     initMaps();
-    // Run initial analysis with default parameters
-    runCompleteAnalysis();
+    initAuthState();
     // Preload order history for Orders & Tracking tab
     loadOrderHistory();
 });
+
+// ============================================================================
+// DUAL LOGIN PORTAL & AUTHENTICATION (FARMER & BUYER)
+// ============================================================================
+
+// Toggle active role tab in portal (Farmer vs Buyer)
+function setPortalRole(role) {
+    const tabFarmer = document.getElementById("portalTabFarmer");
+    const tabBuyer = document.getElementById("portalTabBuyer");
+    const sectionFarmer = document.getElementById("portalFarmerSection");
+    const sectionBuyer = document.getElementById("portalBuyerSection");
+
+    if (role === "farmer") {
+        if (tabFarmer) tabFarmer.classList.add("active");
+        if (tabBuyer) tabBuyer.classList.remove("active");
+        if (sectionFarmer) {
+            sectionFarmer.style.display = "block";
+            sectionFarmer.classList.add("active");
+        }
+        if (sectionBuyer) {
+            sectionBuyer.style.display = "none";
+            sectionBuyer.classList.remove("active");
+        }
+    } else {
+        if (tabBuyer) tabBuyer.classList.add("active");
+        if (tabFarmer) tabFarmer.classList.remove("active");
+        if (sectionBuyer) {
+            sectionBuyer.style.display = "block";
+            sectionBuyer.classList.add("active");
+        }
+        if (sectionFarmer) {
+            sectionFarmer.style.display = "none";
+            sectionFarmer.classList.remove("active");
+        }
+    }
+}
+
+// Check saved session on load
+function initAuthState() {
+    const saved = localStorage.getItem("farmbuy_user");
+    if (saved) {
+        try {
+            state.currentUser = JSON.parse(saved);
+        } catch (e) {
+            state.currentUser = null;
+        }
+    }
+
+    const portalScreen = document.getElementById("portalLoginScreen");
+    const mainScreen = document.getElementById("mainPlatformScreen");
+
+    if (state.currentUser) {
+        // User is logged in -> show main platform
+        if (portalScreen) portalScreen.style.display = "none";
+        if (mainScreen) mainScreen.style.display = "block";
+        applyUserPlatformView();
+    } else {
+        // No user logged in -> present dedicated 2-option login screen directly
+        if (portalScreen) portalScreen.style.display = "flex";
+        if (mainScreen) mainScreen.style.display = "none";
+    }
+}
+
+// Apply role-based platform view and user header pill
+function applyUserPlatformView() {
+    const user = state.currentUser;
+    if (!user) return;
+
+    const navPill = document.getElementById("navUserStatusPill");
+    const navIcon = document.getElementById("navUserRoleIcon");
+    const navName = document.getElementById("navUserName");
+    const farmerPortalView = document.getElementById("farmerPortalView");
+    const buyerPortalView = document.getElementById("buyerPortalView");
+
+    if (user.role === "farmer") {
+        if (navIcon) navIcon.textContent = "🌾";
+        if (navName) navName.textContent = `Farmer: ${user.name}`;
+        if (navPill) navPill.className = "user-status-pill farmer-pill";
+
+        if (farmerPortalView) {
+            farmerPortalView.style.display = "block";
+            const welcomeTitle = document.getElementById("farmerPortalWelcome");
+            if (welcomeTitle) welcomeTitle.textContent = `🌾 Welcome, Farmer ${user.name}!`;
+            const addrSub = document.getElementById("farmerPortalAddressSub");
+            if (addrSub) addrSub.textContent = `${user.address || "Farm Gate"}, ${user.state || ""} (${user.pincode || ""}) • Phone: ${user.phone || ""}`;
+            loadFarmerProduceList();
+        }
+        if (buyerPortalView) {
+            buyerPortalView.style.display = "block";
+        }
+        runCompleteAnalysis();
+    } else {
+        // Buyer Role
+        if (navIcon) navIcon.textContent = "🏢";
+        if (navName) navName.textContent = `Buyer: ${user.name}`;
+        if (navPill) navPill.className = "user-status-pill buyer-pill";
+
+        if (farmerPortalView) farmerPortalView.style.display = "none";
+        if (buyerPortalView) buyerPortalView.style.display = "block";
+        runCompleteAnalysis();
+    }
+
+    // Refresh Leaflet maps once DOM layout is updated
+    setTimeout(() => {
+        if (state.miniMap) state.miniMap.invalidateSize();
+        if (state.fullMap) state.fullMap.invalidateSize();
+    }, 200);
+}
+
+// Handle Farmer Registration & Crop Submission
+async function handlePortalFarmerSubmit(event) {
+    if (event) event.preventDefault();
+    const btn = document.getElementById("portalFarmerSubmitBtn");
+    const originalText = btn ? btn.innerHTML : "Save Produce to Database & Enter Platform";
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span>⏳ Storing Produce in Database...</span>`;
+    }
+
+    const payload = {
+        name: document.getElementById("farmerNameInput").value.trim(),
+        phone_number: document.getElementById("farmerPhoneInput").value.trim(),
+        address: document.getElementById("farmerAddressInput").value.trim(),
+        state: document.getElementById("farmerStateInput").value.trim(),
+        pincode: document.getElementById("farmerPincodeInput").value.trim(),
+        commodity: document.getElementById("farmerCropInput").value.trim(),
+        quantity_kg: parseFloat(document.getElementById("farmerQtyInput").value),
+        price_per_kg: parseFloat(document.getElementById("farmerPriceInput").value)
+    };
+
+    try {
+        const res = await fetch(`${API_BASE}/api/auth/farmer`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            throw new Error(data.detail || "Failed to store farmer produce.");
+        }
+
+        state.currentUser = {
+            role: "farmer",
+            id: data.user_id,
+            name: data.name,
+            phone: data.phone_number,
+            address: data.address,
+            pincode: data.pincode,
+            state: data.state,
+            details: data.details
+        };
+        localStorage.setItem("farmbuy_user", JSON.stringify(state.currentUser));
+
+        // Switch to Platform View
+        const portalScreen = document.getElementById("portalLoginScreen");
+        const mainScreen = document.getElementById("mainPlatformScreen");
+        if (portalScreen) portalScreen.style.display = "none";
+        if (mainScreen) mainScreen.style.display = "block";
+
+        applyUserPlatformView();
+        showToast(`🌱 ${data.message}`, "success");
+
+        // Reload products list so newly entered crop is selectable across marketplace
+        await loadProducts();
+    } catch (err) {
+        console.error("Farmer login error:", err);
+        showToast(`⚠️ ${err.message}`, "error");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+}
+
+// Handle Buyer Login & Market Access
+async function handlePortalBuyerSubmit(event) {
+    if (event) event.preventDefault();
+    const btn = document.getElementById("portalBuyerSubmitBtn");
+    const originalText = btn ? btn.innerHTML : "Login & View Crop Details";
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span>⏳ Authenticating Buyer...</span>`;
+    }
+
+    const payload = {
+        name: document.getElementById("buyerNameInput").value.trim(),
+        address: document.getElementById("buyerAddressInput").value.trim(),
+        city: document.getElementById("buyerCityInput").value.trim(),
+        state: document.getElementById("buyerStateInput").value.trim(),
+        pincode: document.getElementById("buyerPincodeInput").value.trim(),
+        phone_number: document.getElementById("buyerPhoneInput").value.trim()
+    };
+
+    try {
+        const res = await fetch(`${API_BASE}/api/auth/buyer`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            throw new Error(data.detail || "Failed to log in buyer.");
+        }
+
+        state.currentUser = {
+            role: "buyer",
+            id: data.user_id,
+            name: data.name,
+            phone: data.phone_number,
+            address: data.address,
+            city: payload.city,
+            pincode: data.pincode,
+            state: data.state,
+            details: data.details
+        };
+        localStorage.setItem("farmbuy_user", JSON.stringify(state.currentUser));
+
+        // Switch to Platform View
+        const portalScreen = document.getElementById("portalLoginScreen");
+        const mainScreen = document.getElementById("mainPlatformScreen");
+        if (portalScreen) portalScreen.style.display = "none";
+        if (mainScreen) mainScreen.style.display = "block";
+
+        applyUserPlatformView();
+        showToast(`🏢 ${data.message}`, "success");
+
+        await loadProducts();
+        runCompleteAnalysis();
+    } catch (err) {
+        console.error("Buyer login error:", err);
+        showToast(`⚠️ ${err.message}`, "error");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+}
+
+// Logout & Return to 2-Option Portal Login Screen
+function handleLogout() {
+    localStorage.removeItem("farmbuy_user");
+    state.currentUser = null;
+
+    const portalScreen = document.getElementById("portalLoginScreen");
+    const mainScreen = document.getElementById("mainPlatformScreen");
+    if (mainScreen) mainScreen.style.display = "none";
+    if (portalScreen) portalScreen.style.display = "flex";
+
+    showToast("🚪 Logged out. Choose Farmer or Buyer to log in.", "info");
+}
+
+// Fetch Farmer's Listed Produce from Database
+async function loadFarmerProduceList() {
+    if (!state.currentUser || state.currentUser.role !== "farmer") return;
+    const tableBody = document.getElementById("farmerProduceListBody");
+    if (!tableBody) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/api/auth/farmer/${state.currentUser.id}/supplies`);
+        if (!res.ok) return;
+        const data = await res.json();
+
+        if (!data.supplies || data.supplies.length === 0) {
+            tableBody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-3">No active produce listed yet. Click "+ Add Another Crop" above.</td></tr>`;
+            return;
+        }
+
+        tableBody.innerHTML = data.supplies.map(s => `
+            <tr>
+                <td><strong>${s.product_name}</strong> <span class="badge" style="background:#f1f5f9; color:#475569; font-size:11px; margin-left:4px;">${s.quality_grade || "Grade A"}</span></td>
+                <td><strong>${Number(s.quantity_kg).toLocaleString()}</strong> kg</td>
+                <td><strong>₹${Number(s.expected_price).toFixed(2)}</strong>/kg</td>
+                <td><span style="color:var(--text-muted);">₹${Number(s.mandi_benchmark).toFixed(2)}/kg</span></td>
+                <td><strong class="text-success">₹${Number(s.subtotal_value).toLocaleString()}</strong></td>
+                <td><span class="badge" style="background:#ecfdf5; color:#15803d; font-weight:700;">● Stored & Active</span></td>
+            </tr>
+        `).join("");
+    } catch (err) {
+        console.error("Error loading farmer produce list:", err);
+    }
+}
+
+// Toggle Add Another Crop Form
+function toggleAddMoreCropForm() {
+    const card = document.getElementById("inlineAddCropCard");
+    if (!card) return;
+    const isHidden = card.style.display === "none" || !card.style.display;
+    card.style.display = isHidden ? "block" : "none";
+}
+
+// Save Additional Crop to Farmer's Catalog in Database
+async function handleInlineAddSupply(event) {
+    if (event) event.preventDefault();
+    if (!state.currentUser || state.currentUser.role !== "farmer") return;
+
+    const cropInput = document.getElementById("inlineCropName");
+    const qtyInput = document.getElementById("inlineCropQty");
+    const priceInput = document.getElementById("inlineCropPrice");
+
+    const payload = {
+        farmer_id: state.currentUser.id,
+        commodity: cropInput.value.trim(),
+        quantity_kg: parseFloat(qtyInput.value),
+        price_per_kg: parseFloat(priceInput.value),
+        quality_grade: "Grade A"
+    };
+
+    try {
+        const res = await fetch(`${API_BASE}/api/auth/farmer/add-supply`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Could not add supply");
+
+        showToast(`✅ ${data.message}`, "success");
+        cropInput.value = "";
+        qtyInput.value = "";
+        priceInput.value = "";
+        toggleAddMoreCropForm();
+
+        await loadFarmerProduceList();
+        await loadProducts();
+        runCompleteAnalysis();
+    } catch (err) {
+        showToast(`⚠️ ${err.message}`, "error");
+    }
+}
+
+// Smooth scroll / toggle to Buyer Marketplace view
+function showBuyerMarketplaceView() {
+    const buyerView = document.getElementById("buyerPortalView");
+    if (buyerView) {
+        buyerView.style.display = "block";
+        buyerView.scrollIntoView({ behavior: "smooth" });
+        showToast("🏢 Viewing Live Crop Marketplace & Buyer Procurement", "info");
+    }
+}
+
+function showToast(msg, type = "info") {
+    let toast = document.getElementById("agriToast");
+    if (!toast) {
+        toast = document.createElement("div");
+        toast.id = "agriToast";
+        toast.className = "agri-toast";
+        document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.className = `agri-toast show ${type}`;
+    setTimeout(() => {
+        toast.className = "agri-toast";
+    }, 4500);
+}
 
 // 1. Health Check
 async function checkBackendStatus() {
@@ -73,10 +429,14 @@ async function loadProducts() {
         const products = await res.json();
         state.products = products;
         const select = document.getElementById("productSelect");
-        if (products.length > 0) {
+        if (products.length > 0 && select) {
+            const prevVal = select.value;
             select.innerHTML = products.map(p => 
                 `<option value="${p.id}">${p.name} (Mandi: ₹${p.mandi_benchmark_price}/kg)</option>`
             ).join("");
+            if (prevVal && products.some(p => p.id == prevVal)) {
+                select.value = prevVal;
+            }
         }
     } catch (err) {
         console.error("Error loading products:", err);

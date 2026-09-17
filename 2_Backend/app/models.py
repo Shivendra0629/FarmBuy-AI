@@ -9,15 +9,30 @@ class Farmer(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
+    address = Column(String, nullable=True)
     location = Column(String, nullable=False)
+    pincode = Column(String, nullable=True)
     state = Column(String, default="West Bengal")
-    latitude = Column(Float, nullable=False)
-    longitude = Column(Float, nullable=False)
+    latitude = Column(Float, nullable=False, default=22.8124)
+    longitude = Column(Float, nullable=False, default=88.2312)
     contact = Column(String, nullable=True)
     rating = Column(Float, default=4.8)
     farm_size_acres = Column(Float, default=5.0)
 
     supplies = relationship("Supply", back_populates="farmer")
+
+
+class Buyer(Base):
+    __tablename__ = "buyers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    address = Column(String, nullable=False)
+    city = Column(String, nullable=True, default="")
+    phone_number = Column(String, nullable=False)
+    pincode = Column(String, nullable=False)
+    state = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class Product(Base):

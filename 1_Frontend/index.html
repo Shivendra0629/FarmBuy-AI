@@ -12,15 +12,378 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <!-- Main Style -->
     <link rel="stylesheet" href="style.css">
+
+    <script type="text/javascript">
+    let currentLanguage = localStorage.getItem('agri_language') || 'en';
+
+    function googleTranslateElementInit() {
+      new google.translate.TranslateElement(
+        {
+          pageLanguage: 'en',
+          includedLanguages: 'en,hi',
+          autoDisplay: false
+        },
+        'google_translate_element'
+      );
+
+      // If user previously selected Hindi, apply once widget is loaded
+      if (currentLanguage === 'hi') {
+        setTimeout(function() {
+          applyLanguageToGoogleTranslate('hi');
+        }, 800);
+      }
+    }
+
+    function toggleLanguageDropdown(event, btnEl) {
+      if (event) {
+        event.stopPropagation();
+      }
+      const btn = btnEl || event?.currentTarget || document.getElementById('langBtn');
+      const selector = btn ? btn.closest('.lang-selector') : document.querySelector('.lang-selector');
+      if (!selector) return;
+      const menu = selector.querySelector('.lang-dropdown-menu');
+      if (!menu) return;
+
+      const isAlreadyOpen = menu.classList.contains('show');
+      // Close all dropdowns
+      document.querySelectorAll('.lang-dropdown-menu').forEach(m => m.classList.remove('show'));
+      document.querySelectorAll('.lang-btn').forEach(b => {
+        b.classList.remove('open');
+        b.setAttribute('aria-expanded', 'false');
+      });
+
+      if (!isAlreadyOpen) {
+        menu.classList.add('show');
+        if (btn) {
+          btn.classList.add('open');
+          btn.setAttribute('aria-expanded', 'true');
+        }
+      }
+    }
+
+    function closeLanguageDropdown() {
+      document.querySelectorAll('.lang-dropdown-menu').forEach(m => m.classList.remove('show'));
+      document.querySelectorAll('.lang-btn').forEach(b => {
+        b.classList.remove('open');
+        b.setAttribute('aria-expanded', 'false');
+      });
+    }
+
+    function selectLanguage(lang) {
+      currentLanguage = lang;
+      localStorage.setItem('agri_language', lang);
+
+      // Update all button labels across header and navbar
+      document.querySelectorAll('.lang-btn-label').forEach(el => {
+        el.textContent = lang === 'hi' ? 'हिन्दी' : 'English';
+      });
+
+      // Update active option styling
+      document.querySelectorAll('.lang-option').forEach(opt => {
+        if (opt.getAttribute('data-lang') === lang) {
+          opt.classList.add('active');
+        } else {
+          opt.classList.remove('active');
+        }
+      });
+
+      closeLanguageDropdown();
+      applyLanguageToGoogleTranslate(lang);
+    }
+
+    function applyLanguageToGoogleTranslate(lang) {
+      let attempts = 0;
+      const maxAttempts = 30;
+
+      const tryChange = function() {
+        const selectField = document.querySelector(".goog-te-combo");
+        if (selectField) {
+          if (lang === 'en') {
+            // Restore original English
+            document.cookie = "googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+            document.cookie = "googtrans=; expires=Thu, 01 Jan 1970 00:00:00 UTC; domain=" + window.location.hostname + "; path=/;";
+            document.cookie = "googtrans=/en/en; path=/;";
+            document.cookie = "googtrans=/en/en; domain=" + window.location.hostname + "; path=/;";
+
+            let foundEn = false;
+            for (let i = 0; i < selectField.options.length; i++) {
+              if (selectField.options[i].value === 'en') {
+                selectField.selectedIndex = i;
+                foundEn = true;
+                break;
+              }
+            }
+            if (!foundEn) {
+              selectField.selectedIndex = 0;
+              selectField.value = '';
+            }
+            selectField.dispatchEvent(new Event("change"));
+
+            // Check if there is an iframe "Show original" button
+            try {
+              const iframe = document.querySelector('.goog-te-banner-frame');
+              if (iframe) {
+                const innerDoc = iframe.contentDocument || iframe.contentWindow.document;
+                const showOriginalBtn = innerDoc.querySelector('.goog-te-button button') || innerDoc.querySelector('button');
+                if (showOriginalBtn) showOriginalBtn.click();
+              }
+            } catch (e) {}
+          } else {
+            // Hindi
+            document.cookie = "googtrans=/en/hi; path=/;";
+            document.cookie = "googtrans=/en/hi; domain=" + window.location.hostname + "; path=/;";
+            selectField.value = lang;
+            selectField.dispatchEvent(new Event("change"));
+          }
+        } else {
+          attempts++;
+          if (attempts < maxAttempts) {
+            setTimeout(tryChange, 200);
+          }
+        }
+      };
+
+      tryChange();
+    }
+
+    // Close dropdown on outside click or escape key
+    document.addEventListener('click', function(event) {
+      const langSelector = document.getElementById('langSelector');
+      if (langSelector && !langSelector.contains(event.target)) {
+        closeLanguageDropdown();
+      }
+    });
+
+    document.addEventListener('keydown', function(event) {
+      if (event.key === 'Escape') {
+        closeLanguageDropdown();
+      }
+    });
+
+    // Continuously suppress Google Translate banner, top iframe, and body offset
+    function killGoogleTranslateBanner() {
+      const selectors = [
+        '.goog-te-banner-frame',
+        'iframe.goog-te-banner-frame',
+        '.goog-te-top-frame',
+        '#goog-gt-tt',
+        '.goog-te-balloon-frame',
+        '.goog-te-spinner-pos'
+      ];
+      selectors.forEach(sel => {
+        document.querySelectorAll(sel).forEach(el => {
+          el.style.setProperty('display', 'none', 'important');
+          el.style.setProperty('visibility', 'hidden', 'important');
+          el.style.setProperty('height', '0px', 'important');
+          el.style.setProperty('opacity', '0', 'important');
+        });
+      });
+      if (document.body && document.body.style.top && document.body.style.top !== '0px') {
+        document.body.style.setProperty('top', '0px', 'important');
+        document.body.style.setProperty('position', 'static', 'important');
+      }
+    }
+    setInterval(killGoogleTranslateBanner, 150);
+
+    // Initialize UI on load
+    document.addEventListener('DOMContentLoaded', function() {
+      killGoogleTranslateBanner();
+      const savedLang = localStorage.getItem('agri_language') || 'en';
+      const currentLangText = document.getElementById('currentLangText');
+      if (currentLangText) {
+        currentLangText.textContent = savedLang === 'hi' ? 'हिन्दी' : 'English';
+      }
+      const options = document.querySelectorAll('.lang-option');
+      options.forEach(opt => {
+        if (opt.getAttribute('data-lang') === savedLang) {
+          opt.classList.add('active');
+        } else {
+          opt.classList.remove('active');
+        }
+      });
+    });
+  </script>
+
+  <script src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
+
+
+
 </head>
 <body>
+
+    <!-- Hidden Google Translate widget container -->
+    <div id="google_translate_element" style="position: absolute; left: -9999px; top: -9999px; visibility: hidden;"></div>
+
+    <!-- ==========================================================================
+         DEDICATED LANDING LOGIN SCREEN (Displayed directly when website is opened)
+         ========================================================================== -->
+    <div id="portalLoginScreen" class="portal-login-screen">
+        <header class="portal-header">
+            <div class="brand-container">
+                <div class="brand-icon">🌱</div>
+                <div>
+                    <div class="brand-title">FarmBuy<span class="ai-tag">AI</span></div>
+                    <div class="brand-sub">Predictive Farm-to-Buyer Supply Intelligence Platform</div>
+                </div>
+            </div>
+
+            <!-- Language Dropdown -->
+            <div class="lang-selector" id="loginLangSelector">
+                <button type="button" class="lang-btn" id="langBtn" aria-expanded="false" onclick="toggleLanguageDropdown(event, this)">
+                    <span class="lang-btn-icon">🌐</span>
+                    <span class="lang-btn-label" id="currentLangText">English</span>
+                    <span class="lang-btn-arrow">▾</span>
+                </button>
+                <div class="lang-dropdown-menu" id="langDropdownMenu" role="menu">
+                    <button type="button" class="lang-option active" data-lang="en" onclick="selectLanguage('en')">
+                        <span class="lang-flag">🇬🇧</span>
+                        <div class="lang-names">
+                            <span class="lang-primary-name">English</span>
+                            <span class="lang-secondary-name">Default</span>
+                        </div>
+                        <span class="lang-check">✓</span>
+                    </button>
+                    <button type="button" class="lang-option" data-lang="hi" onclick="selectLanguage('hi')">
+                        <span class="lang-flag">🇮🇳</span>
+                        <div class="lang-names">
+                            <span class="lang-primary-name">हिन्दी</span>
+                            <span class="lang-secondary-name">Hindi</span>
+                        </div>
+                        <span class="lang-check">✓</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <main class="portal-content">
+            <div class="portal-box">
+                <div class="portal-intro">
+                    <h2>Select Login Option</h2>
+                    <p>Choose your role to continue: Are you listing crops as a <strong>Farmer</strong> or procuring produce as a <strong>Buyer</strong>?</p>
+                </div>
+
+                <!-- 2-Option Role Switcher Tabs -->
+                <div class="portal-role-tabs">
+                    <button type="button" class="portal-tab-btn active" id="portalTabFarmer" onclick="setPortalRole('farmer')">
+                        <span class="portal-tab-icon">🌾</span>
+                        <div>
+                            <div class="portal-tab-title">Farmer (किसान)</div>
+                            <div class="portal-tab-subtitle">Enter & List Your Crops</div>
+                        </div>
+                    </button>
+                    <button type="button" class="portal-tab-btn" id="portalTabBuyer" onclick="setPortalRole('buyer')">
+                        <span class="portal-tab-icon">🏢</span>
+                        <div>
+                            <div class="portal-tab-title">Buyer (खरीदार)</div>
+                            <div class="portal-tab-subtitle">Procure & View Market Crops</div>
+                        </div>
+                    </button>
+                </div>
+
+                <!-- 1. FARMER LOGIN FORM -->
+                <div id="portalFarmerSection" class="portal-form-container active">
+                    <div class="portal-form-header">
+                        <h3>👨‍🌾 Farmer Registration & Crop Listing</h3>
+                        <p>Manually enter your personal details and commodity harvest to store in the database.</p>
+                    </div>
+
+                    <form id="portalFarmerForm" onsubmit="handlePortalFarmerSubmit(event)">
+                        <div class="portal-form-grid">
+                            <div class="form-field">
+                                <label for="farmerNameInput">Farmer Full Name <span class="req">*</span></label>
+                                <input type="text" id="farmerNameInput" placeholder="e.g. Ramesh Kumar" required>
+                            </div>
+                            <div class="form-field">
+                                <label for="farmerPhoneInput">Phone Number <span class="req">*</span></label>
+                                <input type="tel" id="farmerPhoneInput" placeholder="e.g. 9876543210" required>
+                            </div>
+                            <div class="form-field col-span-2">
+                                <label for="farmerAddressInput">Village / Farm Gate Address <span class="req">*</span></label>
+                                <input type="text" id="farmerAddressInput" placeholder="e.g. Singur Village, Hooghly District" required>
+                            </div>
+                            <div class="form-field">
+                                <label for="farmerStateInput">State Name <span class="req">*</span></label>
+                                <input type="text" id="farmerStateInput" list="indianStatesList" placeholder="e.g. West Bengal" value="West Bengal" required>
+                            </div>
+                            <div class="form-field">
+                                <label for="farmerPincodeInput">Postal Pincode <span class="req">*</span></label>
+                                <input type="text" id="farmerPincodeInput" placeholder="e.g. 712409" required>
+                            </div>
+                            <div class="form-field col-span-2">
+                                <label for="farmerCropInput">Commodity / Crop Name <span class="req">*</span></label>
+                                <input type="text" id="farmerCropInput" list="commonCropsList" placeholder="Type crop name freely (e.g. Potato, Tomato, Wheat, Onion, Rice, Mustard...)" required>
+                            </div>
+                            <div class="form-field">
+                                <label for="farmerQtyInput">Quantity Available (kg) <span class="req">*</span></label>
+                                <input type="number" id="farmerQtyInput" step="any" placeholder="e.g. 5000" required>
+                            </div>
+                            <div class="form-field">
+                                <label for="farmerPriceInput">Desired Price per kg (₹/kg) <span class="req">*</span></label>
+                                <input type="number" id="farmerPriceInput" step="any" placeholder="e.g. 18.50" required>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn-primary portal-submit-btn" id="portalFarmerSubmitBtn">
+                            🌾 Save Produce to Database & Enter Platform
+                        </button>
+                    </form>
+                </div>
+
+                <!-- 2. BUYER LOGIN FORM -->
+                <div id="portalBuyerSection" class="portal-form-container" style="display:none;">
+                    <div class="portal-form-header">
+                        <h3>🏢 Buyer & Wholesaler Login</h3>
+                        <p>Manually enter your organization and delivery details to access all crop listings.</p>
+                    </div>
+
+                    <form id="portalBuyerForm" onsubmit="handlePortalBuyerSubmit(event)">
+                        <div class="portal-form-grid">
+                            <div class="form-field col-span-2">
+                                <label for="buyerNameInput">Buyer / Enterprise Name <span class="req">*</span></label>
+                                <input type="text" id="buyerNameInput" placeholder="e.g. Priya Sharma (BigBasket Procurement)" required>
+                            </div>
+                            <div class="form-field col-span-2">
+                                <label for="buyerAddressInput">Delivery Address / Wholesale Hub <span class="req">*</span></label>
+                                <input type="text" id="buyerAddressInput" placeholder="e.g. Posta Wholesale Market" required>
+                            </div>
+                            <div class="form-field">
+                                <label for="buyerCityInput">City <span class="req">*</span></label>
+                                <input type="text" id="buyerCityInput" placeholder="e.g. Kolkata" required>
+                            </div>
+                            <div class="form-field">
+                                <label for="buyerStateInput">State Name <span class="req">*</span></label>
+                                <input type="text" id="buyerStateInput" list="indianStatesList" placeholder="e.g. West Bengal" value="West Bengal" required>
+                            </div>
+                            <div class="form-field">
+                                <label for="buyerPincodeInput">Pincode <span class="req">*</span></label>
+                                <input type="text" id="buyerPincodeInput" placeholder="e.g. 700007" required>
+                            </div>
+                            <div class="form-field">
+                                <label for="buyerPhoneInput">Phone Number <span class="req">*</span></label>
+                                <input type="tel" id="buyerPhoneInput" placeholder="e.g. 9830123456" required>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn-primary portal-submit-btn" style="background:#2563eb;" id="portalBuyerSubmitBtn">
+                            🏢 Login & View Crop Details
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- ==========================================================================
+         MAIN PLATFORM SCREEN (Visible after user logs in as Buyer or Farmer)
+         ========================================================================== -->
+    <div id="mainPlatformScreen" style="display:none;">
 
     <!-- Top Navigation Bar -->
     <header class="navbar">
         <div class="brand-container">
             <div class="brand-icon">🌱</div>
             <div>
-                <div class="brand-title">AgriConnect <span class="ai-tag">AI</span></div>
+                <div class="brand-title"> FarmBuy<span class="ai-tag">AI</span></div>
                 <div class="brand-sub">Predictive Farm-to-Buyer Supply Intelligence Platform</div>
             </div>
         </div>
@@ -34,14 +397,113 @@
             <button class="nav-tab highlight" onclick="switchTab('differentiation')">🏆 Why AgriConnect?</button>
         </nav>
 
-        <div class="system-status" id="systemStatus">
-            <span class="status-pulse"></span>
-            <span id="statusText">Connecting...</span>
+        <div class="navbar-actions">
+            <!-- Language Dropdown in Navbar -->
+            <div class="lang-selector" id="navLangSelector">
+                <button type="button" class="lang-btn" aria-expanded="false" onclick="toggleLanguageDropdown(event, this)">
+                    <span class="lang-btn-icon">🌐</span>
+                    <span class="lang-btn-label">English</span>
+                    <span class="lang-btn-arrow">▾</span>
+                </button>
+                <div class="lang-dropdown-menu" role="menu">
+                    <button type="button" class="lang-option active" data-lang="en" onclick="selectLanguage('en')">
+                        <span class="lang-flag">🇬🇧</span>
+                        <div class="lang-names">
+                            <span class="lang-primary-name">English</span>
+                            <span class="lang-secondary-name">Default</span>
+                        </div>
+                        <span class="lang-check">✓</span>
+                    </button>
+                    <button type="button" class="lang-option" data-lang="hi" onclick="selectLanguage('hi')">
+                        <span class="lang-flag">🇮🇳</span>
+                        <div class="lang-names">
+                            <span class="lang-primary-name">हिन्दी</span>
+                            <span class="lang-secondary-name">Hindi</span>
+                        </div>
+                        <span class="lang-check">✓</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Active User Role Badge -->
+            <div class="user-status-pill" id="navUserStatusPill">
+                <span id="navUserRoleIcon">🏢</span>
+                <span id="navUserName">Buyer Portal</span>
+            </div>
+
+            <!-- Logout / Switch User Button -->
+            <button type="button" class="btn-logout-header" onclick="handleLogout()" title="Logout and return to Login Screen">
+                🚪 Logout / Switch
+            </button>
+
+            <div class="system-status" id="systemStatus">
+                <span class="status-pulse"></span>
+                <span id="statusText">Connected</span>
+            </div>
         </div>
     </header>
 
-    <!-- Main Container -->
+    <!-- Main App Container -->
     <div class="app-container">
+
+        <!-- FARMER VIEW SUMMARY (Visible when Farmer is logged in) -->
+        <div id="farmerPortalView" style="display:none; margin-bottom:24px;">
+            <div class="card panel-card" style="border-left: 5px solid #16a34a;">
+                <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <h3 id="farmerPortalWelcome">🌾 Welcome, Farmer!</h3>
+                        <p class="section-desc" id="farmerPortalAddressSub">Your produce harvest batches are stored in the platform database.</p>
+                    </div>
+                    <div style="display:flex; gap:10px;">
+                        <button class="btn-secondary" onclick="toggleAddMoreCropForm()">➕ Add Another Crop</button>
+                        <button class="btn-primary" onclick="showBuyerMarketplaceView()">🏢 View Crop Marketplace (Buyer View)</button>
+                    </div>
+                </div>
+
+                <!-- Inline Add Another Crop Form (Toggled on demand) -->
+                <div id="inlineAddCropCard" style="display:none; background:#f8fafc; border:1px dashed var(--border-color); border-radius:var(--radius-sm); padding:16px; margin:14px 0;">
+                    <h4 style="margin-bottom:10px; font-size:14px;">➕ List Another Crop in Database</h4>
+                    <form onsubmit="handleInlineAddSupply(event)" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)) 140px; gap:10px; align-items:end;">
+                        <div>
+                            <label style="font-size:11px; font-weight:700;">Crop Name *</label>
+                            <input type="text" id="inlineCropName" list="commonCropsList" placeholder="e.g. Wheat, Tomato" required style="width:100%; padding:7px 10px; font-size:13px; border:1px solid #cbd5e1; border-radius:6px;">
+                        </div>
+                        <div>
+                            <label style="font-size:11px; font-weight:700;">Quantity (kg) *</label>
+                            <input type="number" id="inlineCropQty" step="any" placeholder="e.g. 3000" required style="width:100%; padding:7px 10px; font-size:13px; border:1px solid #cbd5e1; border-radius:6px;">
+                        </div>
+                        <div>
+                            <label style="font-size:11px; font-weight:700;">Price (₹/kg) *</label>
+                            <input type="number" id="inlineCropPrice" step="any" placeholder="e.g. 21.00" required style="width:100%; padding:7px 10px; font-size:13px; border:1px solid #cbd5e1; border-radius:6px;">
+                        </div>
+                        <button type="submit" class="btn-primary" style="padding:8px 12px; font-size:13px;">Save Crop</button>
+                    </form>
+                </div>
+
+                <div class="table-responsive" style="margin-top:10px;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Commodity</th>
+                                <th>Quantity (kg)</th>
+                                <th>Your Asking Rate</th>
+                                <th>Mandi Benchmark</th>
+                                <th>Batch Value</th>
+                                <th>Database Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="farmerProduceListBody">
+                            <tr>
+                                <td colspan="6" class="text-center text-muted py-3">Loading your listed produce from database...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- BUYER PORTAL VIEW (Visible for Buyer and accessible by Farmer) -->
+        <div id="buyerPortalView">
 
         <!-- Control Bar / Demand Input -->
         <section class="control-panel">
@@ -525,16 +987,56 @@
             </div>
         </div>
 
-    </div>
+        </div> <!-- End #buyerPortalView -->
+    </div> <!-- End .app-container -->
+    </div> <!-- End #mainPlatformScreen -->
+
+    <!-- Datalist for common commodities (unrestricted input helper) -->
+    <datalist id="commonCropsList">
+        <option value="Tomato (Fresh Table)">
+        <option value="Potato (Jyoti)">
+        <option value="Red Onion">
+        <option value="Wheat (Sharbati)">
+        <option value="Rice (Minikit)">
+        <option value="Green Chilli">
+        <option value="Cauliflower">
+        <option value="Mustard Seeds">
+        <option value="Soybean">
+        <option value="Paddy">
+        <option value="Corn / Maize">
+        <option value="Garlic">
+        <option value="Ginger">
+        <option value="Carrot">
+    </datalist>
+
+    <!-- Datalist for Indian States -->
+    <datalist id="indianStatesList">
+        <option value="West Bengal">
+        <option value="Uttar Pradesh">
+        <option value="Punjab">
+        <option value="Maharashtra">
+        <option value="Bihar">
+        <option value="Haryana">
+        <option value="Madhya Pradesh">
+        <option value="Rajasthan">
+        <option value="Gujarat">
+        <option value="Andhra Pradesh">
+        <option value="Karnataka">
+        <option value="Tamil Nadu">
+        <option value="Delhi">
+    </datalist>
+
+    <!-- Toast Notification Element -->
+    <div id="agriToast" class="agri-toast"></div>
 
     <!-- Footer -->
     <footer class="app-footer">
-        <div><strong>AgriConnect AI</strong> • Predictive Farm-to-Buyer Supply Intelligence Platform</div>
+        <div><strong>FarmBuy AI</strong> • Predictive Farm-to-Buyer Supply Intelligence Platform</div>
         <div class="footer-links">
             <a href="http://127.0.0.1:8000/docs" target="_blank">FastAPI OpenAPI Docs</a> • 
-            <span>SQLite / PostgreSQL DB</span> • 
+            <span>SQLite DB</span> • 
             <span>Leaflet Geospatial Engine</span> • 
-            <span>Scikit-Learn ML Core</span>
+            <span>AI Supply Intelligence Core</span>
         </div>
     </footer>
 
@@ -545,5 +1047,6 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- Application Logic -->
     <script src="app.js"></script>
+
 </body>
 </html>

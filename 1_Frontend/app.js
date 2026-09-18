@@ -59,39 +59,139 @@ document.addEventListener("DOMContentLoaded", async () => {
 });
 
 // ============================================================================
-// DUAL LOGIN PORTAL & AUTHENTICATION (FARMER & BUYER)
+// TRI-LOGIN PORTAL & AUTHENTICATION (FARMER, BUYER, ADMIN/OWNER)
 // ============================================================================
 
-// Toggle active role tab in portal (Farmer vs Buyer)
+// Toggle active role tab in portal (Farmer vs Buyer vs Admin)
 function setPortalRole(role) {
     const tabFarmer = document.getElementById("portalTabFarmer");
     const tabBuyer = document.getElementById("portalTabBuyer");
+    const tabAdmin = document.getElementById("portalTabAdmin");
     const sectionFarmer = document.getElementById("portalFarmerSection");
     const sectionBuyer = document.getElementById("portalBuyerSection");
+    const sectionAdmin = document.getElementById("portalAdminSection");
+
+    [tabFarmer, tabBuyer, tabAdmin].forEach(t => t && t.classList.remove("active"));
+    [sectionFarmer, sectionBuyer, sectionAdmin].forEach(s => {
+        if (s) {
+            s.style.display = "none";
+            s.classList.remove("active");
+        }
+    });
 
     if (role === "farmer") {
         if (tabFarmer) tabFarmer.classList.add("active");
-        if (tabBuyer) tabBuyer.classList.remove("active");
         if (sectionFarmer) {
             sectionFarmer.style.display = "block";
             sectionFarmer.classList.add("active");
         }
-        if (sectionBuyer) {
-            sectionBuyer.style.display = "none";
-            sectionBuyer.classList.remove("active");
-        }
-    } else {
+    } else if (role === "buyer") {
         if (tabBuyer) tabBuyer.classList.add("active");
-        if (tabFarmer) tabFarmer.classList.remove("active");
         if (sectionBuyer) {
             sectionBuyer.style.display = "block";
             sectionBuyer.classList.add("active");
         }
-        if (sectionFarmer) {
-            sectionFarmer.style.display = "none";
-            sectionFarmer.classList.remove("active");
+    } else if (role === "admin") {
+        if (tabAdmin) tabAdmin.classList.add("active");
+        if (sectionAdmin) {
+            sectionAdmin.style.display = "block";
+            sectionAdmin.classList.add("active");
         }
     }
+}
+
+// Switch Farmer sub-mode (Login vs Registration)
+function setFarmerAuthMode(mode) {
+    const btnLogin = document.getElementById("farmerSubModeLogin");
+    const btnReg = document.getElementById("farmerSubModeRegister");
+    const loginContainer = document.getElementById("farmerLoginContainer");
+    const regContainer = document.getElementById("farmerRegisterContainer");
+
+    if (mode === "login") {
+        if (btnLogin) {
+            btnLogin.classList.add("active");
+            btnLogin.style.background = "#ffffff";
+            btnLogin.style.color = "#16a34a";
+            btnLogin.style.boxShadow = "0 1px 3px rgba(0,0,0,0.1)";
+        }
+        if (btnReg) {
+            btnReg.classList.remove("active");
+            btnReg.style.background = "transparent";
+            btnReg.style.color = "#64748b";
+            btnReg.style.boxShadow = "none";
+        }
+        if (loginContainer) loginContainer.style.display = "block";
+        if (regContainer) regContainer.style.display = "none";
+    } else {
+        if (btnReg) {
+            btnReg.classList.add("active");
+            btnReg.style.background = "#ffffff";
+            btnReg.style.color = "#16a34a";
+            btnReg.style.boxShadow = "0 1px 3px rgba(0,0,0,0.1)";
+        }
+        if (btnLogin) {
+            btnLogin.classList.remove("active");
+            btnLogin.style.background = "transparent";
+            btnLogin.style.color = "#64748b";
+            btnLogin.style.boxShadow = "none";
+        }
+        if (loginContainer) loginContainer.style.display = "none";
+        if (regContainer) regContainer.style.display = "block";
+    }
+}
+
+// Switch Buyer sub-mode (Login vs Registration)
+function setBuyerAuthMode(mode) {
+    const btnLogin = document.getElementById("buyerSubModeLogin");
+    const btnReg = document.getElementById("buyerSubModeRegister");
+    const loginContainer = document.getElementById("buyerLoginContainer");
+    const regContainer = document.getElementById("buyerRegisterContainer");
+
+    if (mode === "login") {
+        if (btnLogin) {
+            btnLogin.classList.add("active");
+            btnLogin.style.background = "#ffffff";
+            btnLogin.style.color = "#2563eb";
+            btnLogin.style.boxShadow = "0 1px 3px rgba(0,0,0,0.1)";
+        }
+        if (btnReg) {
+            btnReg.classList.remove("active");
+            btnReg.style.background = "transparent";
+            btnReg.style.color = "#64748b";
+            btnReg.style.boxShadow = "none";
+        }
+        if (loginContainer) loginContainer.style.display = "block";
+        if (regContainer) regContainer.style.display = "none";
+    } else {
+        if (btnReg) {
+            btnReg.classList.add("active");
+            btnReg.style.background = "#ffffff";
+            btnReg.style.color = "#2563eb";
+            btnReg.style.boxShadow = "0 1px 3px rgba(0,0,0,0.1)";
+        }
+        if (btnLogin) {
+            btnLogin.classList.remove("active");
+            btnLogin.style.background = "transparent";
+            btnLogin.style.color = "#64748b";
+            btnLogin.style.boxShadow = "none";
+        }
+        if (loginContainer) loginContainer.style.display = "none";
+        if (regContainer) regContainer.style.display = "block";
+    }
+}
+
+// Helper: Authenticated fetch sending Bearer token
+async function authFetch(url, options = {}) {
+    const headers = { ...(options.headers || {}) };
+    if (state.currentUser && state.currentUser.access_token) {
+        headers["Authorization"] = `Bearer ${state.currentUser.access_token}`;
+    }
+    const res = await fetch(url, { ...options, headers });
+    if (res.status === 401) {
+        showToast("⚠️ Authentication session expired. Please log in again.", "warning");
+        handleLogout();
+    }
+    return res;
 }
 
 // Check saved session on load
@@ -114,13 +214,13 @@ function initAuthState() {
         if (mainScreen) mainScreen.style.display = "block";
         applyUserPlatformView();
     } else {
-        // No user logged in -> present dedicated 2-option login screen directly
+        // No user logged in -> present dedicated 3-option login screen directly
         if (portalScreen) portalScreen.style.display = "flex";
         if (mainScreen) mainScreen.style.display = "none";
     }
 }
 
-// Apply role-based platform view and user header pill (Strict Separation)
+// Apply role-based platform view and user header pill (Farmer, Buyer, Admin, Owner)
 function applyUserPlatformView() {
     const user = state.currentUser;
     if (!user) return;
@@ -130,19 +230,23 @@ function applyUserPlatformView() {
     const navName = document.getElementById("navUserName");
     const farmerNav = document.getElementById("farmerNavLinks");
     const buyerNav = document.getElementById("buyerNavLinks");
+    const adminNav = document.getElementById("adminNavLinks");
     const farmerSection = document.getElementById("farmerDashboardSection");
     const buyerSection = document.getElementById("buyerDashboardSection");
+    const adminSection = document.getElementById("adminDashboardSection");
+    const ownerNavTab = document.getElementById("adminNavTabManagement");
 
     if (user.role === "farmer") {
-        // Show Farmer Navbar & Farmer Dashboard ONLY
         if (navIcon) navIcon.textContent = "🌾";
         if (navName) navName.textContent = `Farmer: ${user.name}`;
         if (navPill) navPill.className = "user-status-pill farmer-pill";
 
         if (buyerNav) buyerNav.style.display = "none";
+        if (adminNav) adminNav.style.display = "none";
         if (farmerNav) farmerNav.style.display = "flex";
 
         if (buyerSection) buyerSection.style.display = "none";
+        if (adminSection) adminSection.style.display = "none";
         if (farmerSection) farmerSection.style.display = "block";
 
         const welcomeTitle = document.getElementById("farmerPortalWelcome");
@@ -151,26 +255,64 @@ function applyUserPlatformView() {
         if (addrSub) addrSub.textContent = `${user.address || "Farm Gate"}, ${user.state || ""} (${user.pincode || ""}) • Phone: ${user.phone || ""}`;
 
         loadFarmerProduceList();
-    } else {
-        // Show Buyer Navbar & Buyer Dashboard ONLY
+    } else if (user.role === "buyer") {
         if (navIcon) navIcon.textContent = "🏢";
         if (navName) navName.textContent = `Buyer: ${user.name}`;
         if (navPill) navPill.className = "user-status-pill buyer-pill";
 
         if (farmerNav) farmerNav.style.display = "none";
+        if (adminNav) adminNav.style.display = "none";
         if (buyerNav) buyerNav.style.display = "flex";
 
         if (farmerSection) farmerSection.style.display = "none";
+        if (adminSection) adminSection.style.display = "none";
         if (buyerSection) buyerSection.style.display = "block";
 
         loadProducts();
         runCompleteAnalysis();
 
-        // Refresh Leaflet maps once DOM layout is unhidden
         setTimeout(() => {
             if (state.miniMap) state.miniMap.invalidateSize();
             if (state.fullMap) state.fullMap.invalidateSize();
         }, 200);
+    } else if (user.role === "admin" || user.role === "owner") {
+        const isOwner = user.role === "owner";
+        if (navIcon) navIcon.textContent = isOwner ? "👑" : "🛡️";
+        if (navName) navName.textContent = isOwner ? `Owner: ${user.name}` : `Admin: ${user.name}`;
+        if (navPill) navPill.className = isOwner ? "user-status-pill owner-pill" : "user-status-pill admin-pill";
+
+        if (farmerNav) farmerNav.style.display = "none";
+        if (buyerNav) buyerNav.style.display = "none";
+        if (adminNav) adminNav.style.display = "flex";
+
+        if (farmerSection) farmerSection.style.display = "none";
+        if (buyerSection) buyerSection.style.display = "none";
+        if (adminSection) adminSection.style.display = "block";
+
+        // Show/hide owner-only management tab
+        if (ownerNavTab) {
+            ownerNavTab.style.display = isOwner ? "inline-block" : "none";
+        }
+
+        // Configure Admin banner
+        const bName = document.getElementById("adminBannerName");
+        const bBadge = document.getElementById("adminBannerRoleBadge");
+        const bUserId = document.getElementById("adminBannerUserId");
+        const bDesc = document.getElementById("adminBannerRoleDesc");
+
+        if (bName) bName.textContent = user.name || "Administrator";
+        if (bUserId) bUserId.textContent = user.admin_user_id || "admin";
+        if (bBadge) {
+            bBadge.textContent = isOwner ? "OWNER" : "ADMIN";
+            bBadge.style.background = isOwner ? "#7c3aed" : "#3b82f6";
+        }
+        if (bDesc) {
+            bDesc.textContent = isOwner
+                ? "Full Platform Authority & Team Management"
+                : "Operational Monitoring & Read Access";
+        }
+
+        switchAdminTab("overview");
     }
 }
 
@@ -181,36 +323,30 @@ function scrollToFarmerSection(sectionId) {
     }
 }
 
-// Handle Farmer Registration & Crop Submission
-async function handlePortalFarmerSubmit(event) {
+// 1. Farmer Login Handler
+async function handleFarmerLoginSubmit(event) {
     if (event) event.preventDefault();
-    const btn = document.getElementById("portalFarmerSubmitBtn");
-    const originalText = btn ? btn.innerHTML : "Save Produce to Database & Enter Platform";
+    const btn = document.getElementById("farmerLoginSubmitBtn");
+    const originalText = btn ? btn.innerHTML : "🌾 Login as Farmer";
     if (btn) {
         btn.disabled = true;
-        btn.innerHTML = `<span>⏳ Storing Produce in Database...</span>`;
+        btn.innerHTML = `<span>⏳ Verifying Farmer Credentials...</span>`;
     }
 
     const payload = {
-        name: document.getElementById("farmerNameInput").value.trim(),
-        phone_number: document.getElementById("farmerPhoneInput").value.trim(),
-        address: document.getElementById("farmerAddressInput").value.trim(),
-        state: document.getElementById("farmerStateInput").value.trim(),
-        pincode: document.getElementById("farmerPincodeInput").value.trim(),
-        commodity: document.getElementById("farmerCropInput").value.trim(),
-        quantity_kg: parseFloat(document.getElementById("farmerQtyInput").value),
-        price_per_kg: parseFloat(document.getElementById("farmerPriceInput").value)
+        name: document.getElementById("farmerLoginNameInput").value.trim(),
+        phone_number: document.getElementById("farmerLoginPhoneInput").value.trim()
     };
 
     try {
-        const res = await fetch(`${API_BASE}/api/auth/farmer`, {
+        const res = await fetch(`${API_BASE}/api/auth/farmer/login`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
         });
         const data = await res.json();
         if (!res.ok) {
-            throw new Error(data.detail || "Failed to store farmer produce.");
+            throw new Error(data.detail || "Farmer login failed.");
         }
 
         state.currentUser = {
@@ -221,21 +357,18 @@ async function handlePortalFarmerSubmit(event) {
             address: data.address,
             pincode: data.pincode,
             state: data.state,
-            details: data.details
+            details: data.details,
+            access_token: data.access_token
         };
         localStorage.setItem("farmbuy_user", JSON.stringify(state.currentUser));
 
-        // Switch to Platform View
         const portalScreen = document.getElementById("portalLoginScreen");
         const mainScreen = document.getElementById("mainPlatformScreen");
         if (portalScreen) portalScreen.style.display = "none";
         if (mainScreen) mainScreen.style.display = "block";
 
         applyUserPlatformView();
-        showToast(`🌱 ${data.message}`, "success");
-
-        // Reload products list so newly entered crop is selectable across marketplace
-        await loadProducts();
+        showToast(`🌱 Welcome back, Farmer ${data.name}!`, "success");
     } catch (err) {
         console.error("Farmer login error:", err);
         showToast(`⚠️ ${err.message}`, "error");
@@ -247,34 +380,91 @@ async function handlePortalFarmerSubmit(event) {
     }
 }
 
-// Handle Buyer Login & Market Access
-async function handlePortalBuyerSubmit(event) {
+// 2. Farmer Register Handler
+async function handleFarmerRegisterSubmit(event) {
     if (event) event.preventDefault();
-    const btn = document.getElementById("portalBuyerSubmitBtn");
-    const originalText = btn ? btn.innerHTML : "Login & View Crop Details";
+    const btn = document.getElementById("farmerRegisterSubmitBtn");
+    const originalText = btn ? btn.innerHTML : "📝 Register as Farmer";
     if (btn) {
         btn.disabled = true;
-        btn.innerHTML = `<span>⏳ Authenticating Buyer...</span>`;
+        btn.innerHTML = `<span>⏳ Storing Farmer in Database...</span>`;
     }
 
+    const nameVal = document.getElementById("farmerRegisterNameInput").value.trim();
+    const phoneVal = document.getElementById("farmerRegisterPhoneInput").value.trim();
+
     const payload = {
-        name: document.getElementById("buyerNameInput").value.trim(),
-        address: document.getElementById("buyerAddressInput").value.trim(),
-        city: document.getElementById("buyerCityInput").value.trim(),
-        state: document.getElementById("buyerStateInput").value.trim(),
-        pincode: document.getElementById("buyerPincodeInput").value.trim(),
-        phone_number: document.getElementById("buyerPhoneInput").value.trim()
+        name: nameVal,
+        phone_number: phoneVal,
+        address: document.getElementById("farmerRegisterAddressInput").value.trim(),
+        state: document.getElementById("farmerRegisterStateInput").value.trim(),
+        pincode: document.getElementById("farmerRegisterPincodeInput").value.trim(),
+        commodity: document.getElementById("farmerRegisterCropInput").value.trim(),
+        quantity_kg: parseFloat(document.getElementById("farmerRegisterQtyInput").value),
+        price_per_kg: parseFloat(document.getElementById("farmerRegisterPriceInput").value)
     };
 
     try {
-        const res = await fetch(`${API_BASE}/api/auth/buyer`, {
+        const res = await fetch(`${API_BASE}/api/auth/farmer/register`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
         });
         const data = await res.json();
         if (!res.ok) {
-            throw new Error(data.detail || "Failed to log in buyer.");
+            throw new Error(data.detail || "Farmer registration failed.");
+        }
+
+        // Requirement notification: "Registration successful. You can now login."
+        showToast("Registration successful. You can now login.", "success");
+
+        // Switch to login sub-mode and prefill inputs
+        setFarmerAuthMode("login");
+        const loginName = document.getElementById("farmerLoginNameInput");
+        const loginPhone = document.getElementById("farmerLoginPhoneInput");
+        if (loginName) loginName.value = nameVal;
+        if (loginPhone) loginPhone.value = phoneVal;
+
+        // Clear registration form
+        document.getElementById("farmerRegisterForm").reset();
+
+        // Refresh products list in background so new crop is cached
+        loadProducts();
+    } catch (err) {
+        console.error("Farmer registration error:", err);
+        showToast(`⚠️ ${err.message}`, "error");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+}
+
+// 3. Buyer Login Handler
+async function handleBuyerLoginSubmit(event) {
+    if (event) event.preventDefault();
+    const btn = document.getElementById("buyerLoginSubmitBtn");
+    const originalText = btn ? btn.innerHTML : "🏢 Login as Buyer";
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span>⏳ Verifying Buyer Credentials...</span>`;
+    }
+
+    const payload = {
+        name: document.getElementById("buyerLoginNameInput").value.trim(),
+        phone_number: document.getElementById("buyerLoginPhoneInput").value.trim()
+    };
+
+    try {
+        const res = await fetch(`${API_BASE}/api/auth/buyer/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            throw new Error(data.detail || "Buyer login failed.");
         }
 
         state.currentUser = {
@@ -283,24 +473,20 @@ async function handlePortalBuyerSubmit(event) {
             name: data.name,
             phone: data.phone_number,
             address: data.address,
-            city: payload.city,
             pincode: data.pincode,
             state: data.state,
-            details: data.details
+            details: data.details,
+            access_token: data.access_token
         };
         localStorage.setItem("farmbuy_user", JSON.stringify(state.currentUser));
 
-        // Switch to Platform View
         const portalScreen = document.getElementById("portalLoginScreen");
         const mainScreen = document.getElementById("mainPlatformScreen");
         if (portalScreen) portalScreen.style.display = "none";
         if (mainScreen) mainScreen.style.display = "block";
 
         applyUserPlatformView();
-        showToast(`🏢 ${data.message}`, "success");
-
-        await loadProducts();
-        runCompleteAnalysis();
+        showToast(`🏢 Welcome back, ${data.name}!`, "success");
     } catch (err) {
         console.error("Buyer login error:", err);
         showToast(`⚠️ ${err.message}`, "error");
@@ -312,7 +498,122 @@ async function handlePortalBuyerSubmit(event) {
     }
 }
 
-// Logout & Return to 2-Option Portal Login Screen
+// 4. Buyer Register Handler
+async function handleBuyerRegisterSubmit(event) {
+    if (event) event.preventDefault();
+    const btn = document.getElementById("buyerRegisterSubmitBtn");
+    const originalText = btn ? btn.innerHTML : "📝 Register as Buyer";
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span>⏳ Storing Buyer in Database...</span>`;
+    }
+
+    const nameVal = document.getElementById("buyerRegisterNameInput").value.trim();
+    const phoneVal = document.getElementById("buyerRegisterPhoneInput").value.trim();
+
+    const payload = {
+        name: nameVal,
+        address: document.getElementById("buyerRegisterAddressInput").value.trim(),
+        city: document.getElementById("buyerRegisterCityInput").value.trim(),
+        state: document.getElementById("buyerRegisterStateInput").value.trim(),
+        pincode: document.getElementById("buyerRegisterPincodeInput").value.trim(),
+        phone_number: phoneVal
+    };
+
+    try {
+        const res = await fetch(`${API_BASE}/api/auth/buyer/register`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            throw new Error(data.detail || "Buyer registration failed.");
+        }
+
+        // Requirement notification: "Registration successful. You can now login."
+        showToast("Registration successful. You can now login.", "success");
+
+        // Switch to buyer login sub-mode and prefill inputs
+        setBuyerAuthMode("login");
+        const loginName = document.getElementById("buyerLoginNameInput");
+        const loginPhone = document.getElementById("buyerLoginPhoneInput");
+        if (loginName) loginName.value = nameVal;
+        if (loginPhone) loginPhone.value = phoneVal;
+
+        // Clear registration form
+        document.getElementById("buyerRegisterForm").reset();
+    } catch (err) {
+        console.error("Buyer registration error:", err);
+        showToast(`⚠️ ${err.message}`, "error");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+}
+
+// 5. Admin & Owner Login Handler
+async function handleAdminLoginSubmit(event) {
+    if (event) event.preventDefault();
+    const btn = document.getElementById("adminLoginSubmitBtn");
+    const originalText = btn ? btn.innerHTML : "🛡️ Login to Admin Portal";
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span>⏳ Authenticating Admin...</span>`;
+    }
+
+    const payload = {
+        admin_user_id: document.getElementById("adminUserIdInput").value.trim(),
+        password: document.getElementById("adminPasswordInput").value
+    };
+
+    try {
+        const res = await fetch(`${API_BASE}/api/auth/admin/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            throw new Error(data.detail || "Admin authentication failed.");
+        }
+
+        const roleLower = (data.role || "admin").toLowerCase();
+        state.currentUser = {
+            role: roleLower,
+            id: data.user_id,
+            name: data.name,
+            admin_user_id: data.admin_user_id,
+            access_token: data.access_token
+        };
+        localStorage.setItem("farmbuy_user", JSON.stringify(state.currentUser));
+
+        // Switch to Platform View
+        const portalScreen = document.getElementById("portalLoginScreen");
+        const mainScreen = document.getElementById("mainPlatformScreen");
+        if (portalScreen) portalScreen.style.display = "none";
+        if (mainScreen) mainScreen.style.display = "block";
+
+        applyUserPlatformView();
+        showToast(`🛡️ Logged in as ${data.name} (${data.role})`, "success");
+    } catch (err) {
+        console.error("Admin login error:", err);
+        showToast(`⚠️ ${err.message}`, "error");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+}
+
+// Legacy aliases for backward compatibility
+const handlePortalFarmerSubmit = handleFarmerRegisterSubmit;
+const handlePortalBuyerSubmit = handleBuyerRegisterSubmit;
+
+// Logout & Return to Portal Login Screen
 function handleLogout() {
     localStorage.removeItem("farmbuy_user");
     state.currentUser = null;
@@ -322,7 +623,541 @@ function handleLogout() {
     if (mainScreen) mainScreen.style.display = "none";
     if (portalScreen) portalScreen.style.display = "flex";
 
-    showToast("🚪 Logged out. Choose Farmer or Buyer to log in.", "info");
+    showToast("🚪 Logged out. Choose Farmer, Buyer, or Admin to log in.", "info");
+}
+
+// ============================================================================
+// ADMIN DASHBOARD & OWNER MANAGEMENT ENGINE
+// ============================================================================
+let currentAdminTab = "overview";
+
+function switchAdminTab(tabName) {
+    if (!state.currentUser || (state.currentUser.role !== "admin" && state.currentUser.role !== "owner")) {
+        return;
+    }
+
+    // Owner protection check for management tab
+    if (tabName === "management" && state.currentUser.role !== "owner") {
+        showToast("⚠️ Admin Team Management is restricted to Super Admin (Owner).", "warning");
+        tabName = "overview";
+    }
+
+    currentAdminTab = tabName;
+
+    // Update nav tab buttons in #adminNavLinks
+    const navTabs = document.querySelectorAll("#adminNavLinks .nav-tab");
+    navTabs.forEach(t => t.classList.remove("active"));
+    const activeTabBtn = {
+        overview: document.getElementById("adminNavTabOverview"),
+        farmers: document.getElementById("adminNavTabFarmers"),
+        buyers: document.getElementById("adminNavTabBuyers"),
+        supplies: document.getElementById("adminNavTabSupplies"),
+        orders: document.getElementById("adminNavTabOrders"),
+        management: document.getElementById("adminNavTabManagement")
+    }[tabName];
+    if (activeTabBtn) activeTabBtn.classList.add("active");
+
+    // Show selected tab pane, hide others
+    const panes = {
+        overview: document.getElementById("adminTabPaneOverview"),
+        farmers: document.getElementById("adminTabPaneFarmers"),
+        buyers: document.getElementById("adminTabPaneBuyers"),
+        supplies: document.getElementById("adminTabPaneSupplies"),
+        orders: document.getElementById("adminTabPaneOrders"),
+        management: document.getElementById("adminTabPaneManagement")
+    };
+
+    Object.keys(panes).forEach(k => {
+        if (panes[k]) panes[k].style.display = k === tabName ? "block" : "none";
+    });
+
+    // Load data for active tab
+    refreshCurrentAdminTab();
+}
+
+function refreshCurrentAdminTab() {
+    switch (currentAdminTab) {
+        case "overview":
+            loadAdminOverview();
+            break;
+        case "farmers":
+            loadAdminFarmers();
+            break;
+        case "buyers":
+            loadAdminBuyers();
+            break;
+        case "supplies":
+            loadAdminSupplies();
+            break;
+        case "orders":
+            loadAdminOrders();
+            break;
+        case "management":
+            loadAdminAccounts();
+            break;
+    }
+}
+
+// 1. Load Platform Overview Stats
+async function loadAdminOverview() {
+    try {
+        const res = await authFetch(`${API_BASE}/api/admin/stats`);
+        if (!res.ok) throw new Error("Failed to load platform statistics.");
+        const data = await res.json();
+
+        const kpiFarmers = document.getElementById("adminKpiTotalFarmers");
+        const kpiBuyers = document.getElementById("adminKpiTotalBuyers");
+        const kpiSuppliesKg = document.getElementById("adminKpiTotalSuppliesKg");
+        const kpiSuppliesCount = document.getElementById("adminKpiTotalSuppliesCount");
+        const kpiOrdersVal = document.getElementById("adminKpiTotalOrdersValue");
+        const kpiOrdersCount = document.getElementById("adminKpiTotalOrdersCount");
+        const kpiAdmins = document.getElementById("adminKpiActiveAdmins");
+
+        if (kpiFarmers) kpiFarmers.textContent = Number(data.farmers_count || 0).toLocaleString();
+        if (kpiBuyers) kpiBuyers.textContent = Number(data.buyers_count || 0).toLocaleString();
+        if (kpiSuppliesKg) kpiSuppliesKg.textContent = `${Number(data.supplies_total_kg || 0).toLocaleString()} kg`;
+        if (kpiSuppliesCount) kpiSuppliesCount.textContent = Number(data.supplies_count || 0).toLocaleString();
+        if (kpiOrdersVal) kpiOrdersVal.textContent = `₹ ${Number(data.orders_total_val || 0).toLocaleString()}`;
+        if (kpiOrdersCount) kpiOrdersCount.textContent = Number(data.orders_count || 0).toLocaleString();
+        if (kpiAdmins) kpiAdmins.textContent = `${data.active_admins_count || 0} / 6`;
+    } catch (err) {
+        console.error("Admin stats error:", err);
+    }
+}
+
+// 2. Load Farmers Directory
+async function loadAdminFarmers() {
+    const tbody = document.getElementById("adminFarmersTableBody");
+    if (!tbody) return;
+    tbody.innerHTML = `<tr><td colspan="7" class="text-muted text-center py-3">Loading farmers directory...</td></tr>`;
+
+    try {
+        const res = await authFetch(`${API_BASE}/api/admin/farmers`);
+        if (!res.ok) throw new Error("Failed to load farmers.");
+        const farmers = await res.json();
+
+        if (!farmers || farmers.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" class="text-muted text-center py-3">No farmers registered yet.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = farmers.map(f => `
+            <tr>
+                <td><strong>#${f.id}</strong></td>
+                <td style="font-weight:700; color:#1e293b;">${escapeHtml(f.name)}</td>
+                <td>📞 ${escapeHtml(f.phone_number)}</td>
+                <td>${escapeHtml(f.address || "Farm Gate")}</td>
+                <td>${escapeHtml(f.state || "N/A")}</td>
+                <td><code>${escapeHtml(f.pincode || "N/A")}</code></td>
+                <td style="font-size:12px; color:#64748b;">${f.created_at ? new Date(f.created_at).toLocaleDateString() : "Seed Baseline"}</td>
+            </tr>
+        `).join("");
+    } catch (err) {
+        console.error("Farmers load error:", err);
+        tbody.innerHTML = `<tr><td colspan="7" class="text-danger text-center py-3">Error loading farmers: ${err.message}</td></tr>`;
+    }
+}
+
+// 3. Load Buyers Directory
+async function loadAdminBuyers() {
+    const tbody = document.getElementById("adminBuyersTableBody");
+    if (!tbody) return;
+    tbody.innerHTML = `<tr><td colspan="8" class="text-muted text-center py-3">Loading buyers directory...</td></tr>`;
+
+    try {
+        const res = await authFetch(`${API_BASE}/api/admin/buyers`);
+        if (!res.ok) throw new Error("Failed to load buyers.");
+        const buyers = await res.json();
+
+        if (!buyers || buyers.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" class="text-muted text-center py-3">No buyers registered yet.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = buyers.map(b => `
+            <tr>
+                <td><strong>#${b.id}</strong></td>
+                <td style="font-weight:700; color:#1e293b;">${escapeHtml(b.name)}</td>
+                <td>📞 ${escapeHtml(b.phone_number)}</td>
+                <td>${escapeHtml(b.address || "Central Depot")}</td>
+                <td>${escapeHtml(b.city || "N/A")}</td>
+                <td>${escapeHtml(b.state || "N/A")}</td>
+                <td><code>${escapeHtml(b.pincode || "N/A")}</code></td>
+                <td style="font-size:12px; color:#64748b;">${b.created_at ? new Date(b.created_at).toLocaleDateString() : "Seed Baseline"}</td>
+            </tr>
+        `).join("");
+    } catch (err) {
+        console.error("Buyers load error:", err);
+        tbody.innerHTML = `<tr><td colspan="8" class="text-danger text-center py-3">Error loading buyers: ${err.message}</td></tr>`;
+    }
+}
+
+// 4. Load Supplies Inventory
+async function loadAdminSupplies() {
+    const tbody = document.getElementById("adminSuppliesTableBody");
+    if (!tbody) return;
+    tbody.innerHTML = `<tr><td colspan="8" class="text-muted text-center py-3">Loading live supplies...</td></tr>`;
+
+    try {
+        const res = await authFetch(`${API_BASE}/api/admin/supplies`);
+        if (!res.ok) throw new Error("Failed to load supplies.");
+        const supplies = await res.json();
+
+        if (!supplies || supplies.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" class="text-muted text-center py-3">No active produce listed in inventory.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = supplies.map(s => `
+            <tr>
+                <td><strong>#${s.id}</strong></td>
+                <td><code>F-${s.farmer_id}</code></td>
+                <td style="font-weight:600; color:#1e293b;">${escapeHtml(s.farmer_name || `Farmer #${s.farmer_id}`)}</td>
+                <td><strong>${escapeHtml(s.commodity)}</strong></td>
+                <td><span style="font-weight:700; color:#15803d;">${Number(s.quantity_kg).toLocaleString()} kg</span></td>
+                <td>₹ ${Number(s.price_per_kg).toFixed(2)} / kg</td>
+                <td><span class="badge" style="background:#f1f5f9; color:#475569; font-size:11px;">${escapeHtml(s.quality_grade || "Grade A")}</span></td>
+                <td style="font-size:12px; color:#64748b;">${escapeHtml(s.available_date || "Today")}</td>
+            </tr>
+        `).join("");
+    } catch (err) {
+        console.error("Supplies load error:", err);
+        tbody.innerHTML = `<tr><td colspan="8" class="text-danger text-center py-3">Error loading supplies: ${err.message}</td></tr>`;
+    }
+}
+
+// 5. Load Platform Orders
+async function loadAdminOrders() {
+    const tbody = document.getElementById("adminOrdersTableBody");
+    if (!tbody) return;
+    tbody.innerHTML = `<tr><td colspan="8" class="text-muted text-center py-3">Loading platform orders...</td></tr>`;
+
+    try {
+        const res = await authFetch(`${API_BASE}/api/admin/orders`);
+        if (!res.ok) throw new Error("Failed to load orders.");
+        const orders = await res.json();
+
+        if (!orders || orders.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" class="text-muted text-center py-3">No platform orders placed yet.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = orders.map(o => `
+            <tr>
+                <td><strong>${escapeHtml(o.order_code || `#${o.id}`)}</strong></td>
+                <td style="font-size:12px; color:#64748b;">${o.created_at ? new Date(o.created_at).toLocaleString() : "N/A"}</td>
+                <td style="font-weight:700; color:#1e293b;">${escapeHtml(o.buyer_name || "Buyer")}</td>
+                <td><strong>${escapeHtml(o.commodity || "N/A")}</strong></td>
+                <td>${Number(o.total_quantity_kg).toLocaleString()} kg</td>
+                <td style="font-weight:700; color:#15803d;">₹ ${Number(o.total_cost).toLocaleString()}</td>
+                <td>${o.total_distance_km ? `${Number(o.total_distance_km).toFixed(1)} km TSP Route` : "Direct Hub"}</td>
+                <td>
+                    <span class="badge ${o.status === 'CANCELLED' ? 'badge-danger' : 'badge-success'}" style="font-size:11px;">
+                        ${escapeHtml(o.status || "CONFIRMED")}
+                    </span>
+                </td>
+            </tr>
+        `).join("");
+    } catch (err) {
+        console.error("Orders load error:", err);
+        tbody.innerHTML = `<tr><td colspan="8" class="text-danger text-center py-3">Error loading orders: ${err.message}</td></tr>`;
+    }
+}
+
+// 6. Owner Management: Load Admin Accounts
+async function loadAdminAccounts() {
+    if (!state.currentUser || state.currentUser.role !== "owner") return;
+
+    const tbody = document.getElementById("adminAccountsTableBody");
+    const quotaBadge = document.getElementById("adminQuotaBadge");
+    if (!tbody) return;
+    tbody.innerHTML = `<tr><td colspan="7" class="text-muted text-center py-3">Loading system administrators...</td></tr>`;
+
+    try {
+        const res = await authFetch(`${API_BASE}/api/admin/manage/admins`);
+        if (!res.ok) throw new Error("Failed to load administrator accounts.");
+        const accounts = await res.json();
+
+        const regularAdminCount = accounts.filter(a => a.role !== "OWNER").length;
+        if (quotaBadge) {
+            quotaBadge.textContent = `Admins: ${regularAdminCount} / 6`;
+            quotaBadge.style.background = regularAdminCount >= 6 ? "#dc2626" : "#7c3aed";
+        }
+
+        tbody.innerHTML = accounts.map(a => {
+            const isOwner = a.role === "OWNER";
+            const roleBadge = isOwner
+                ? `<span class="badge-owner">OWNER</span>`
+                : `<span class="badge-admin">ADMIN</span>`;
+            const statusBadge = a.is_active
+                ? `<span class="badge-active">● Active</span>`
+                : `<span class="badge-disabled">○ Disabled</span>`;
+
+            const actions = isOwner
+                ? `<span style="font-size:12px; color:#64748b; font-style:italic;">Protected Super Admin</span>`
+                : `
+                    <div style="display:flex; gap:6px; justify-content:center; flex-wrap:wrap;">
+                        <button type="button" class="admin-action-btn" onclick="openChangeAdminIdModal(${a.id}, '${escapeHtml(a.admin_user_id)}', '${escapeHtml(a.name)}')" title="Change User ID">✏️ Change ID</button>
+                        <button type="button" class="admin-action-btn" onclick="openChangeAdminPasswordModal(${a.id}, '${escapeHtml(a.name)}')" title="Change Password">🔑 Password</button>
+                        <button type="button" class="admin-action-btn" onclick="toggleAdminStatus(${a.id}, ${a.is_active})" title="${a.is_active ? 'Disable Account' : 'Activate Account'}">
+                            ${a.is_active ? '⏸️ Disable' : '▶️ Enable'}
+                        </button>
+                        <button type="button" class="admin-action-btn delete" onclick="deleteAdminAccount(${a.id}, '${escapeHtml(a.name)}')" title="Delete Account">🗑️ Delete</button>
+                    </div>
+                `;
+
+            return `
+                <tr>
+                    <td><strong>#${a.id}</strong></td>
+                    <td style="font-weight:700; color:#1e293b;">${escapeHtml(a.name)}</td>
+                    <td><code>${escapeHtml(a.admin_user_id)}</code></td>
+                    <td>${roleBadge}</td>
+                    <td>${statusBadge}</td>
+                    <td style="font-size:12px; color:#64748b;">${a.created_at ? new Date(a.created_at).toLocaleDateString() : "System Root"}</td>
+                    <td style="text-align:center;">${actions}</td>
+                </tr>
+            `;
+        }).join("");
+    } catch (err) {
+        console.error("Admin accounts load error:", err);
+        tbody.innerHTML = `<tr><td colspan="7" class="text-danger text-center py-3">Error loading admin accounts: ${err.message}</td></tr>`;
+    }
+}
+
+// 7. Owner Management: Create New Team Admin (Max 6 limit)
+async function handleCreateAdminSubmit(event) {
+    if (event) event.preventDefault();
+    const btn = document.getElementById("createAdminBtn");
+    const originalText = btn ? btn.innerHTML : "🛡️ Create Admin Account";
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span>⏳ Creating Admin Account...</span>`;
+    }
+
+    const payload = {
+        name: document.getElementById("newAdminNameInput").value.trim(),
+        admin_user_id: document.getElementById("newAdminUserIdInput").value.trim(),
+        password: document.getElementById("newAdminPasswordInput").value
+    };
+
+    try {
+        const res = await authFetch(`${API_BASE}/api/admin/manage/create`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            throw new Error(data.detail || "Failed to create admin account.");
+        }
+
+        document.getElementById("createAdminForm").reset();
+        showToast(`🛡️ Team Admin "${data.name}" created successfully!`, "success");
+        loadAdminAccounts();
+    } catch (err) {
+        console.error("Create admin error:", err);
+        showToast(`⚠️ ${err.message}`, "error");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+}
+
+// 8. Owner Management: Change Admin User ID
+function openChangeAdminIdModal(id, currentUserId, name) {
+    const modal = document.getElementById("adminChangeIdModal");
+    const targetId = document.getElementById("adminTargetDbId");
+    const targetName = document.getElementById("adminChangeIdTargetName");
+    const input = document.getElementById("adminNewUserIdInput");
+
+    if (targetId) targetId.value = id;
+    if (targetName) targetName.textContent = `${name} (${currentUserId})`;
+    if (input) input.value = currentUserId;
+    if (modal) modal.style.display = "flex";
+}
+
+function closeChangeAdminIdModal() {
+    const modal = document.getElementById("adminChangeIdModal");
+    if (modal) modal.style.display = "none";
+}
+
+async function submitChangeAdminId(event) {
+    if (event) event.preventDefault();
+    const id = document.getElementById("adminTargetDbId").value;
+    const newId = document.getElementById("adminNewUserIdInput").value.trim();
+    if (!newId) return;
+
+    try {
+        const res = await authFetch(`${API_BASE}/api/admin/manage/${id}/user-id`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ new_admin_user_id: newId })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Failed to update User ID.");
+
+        closeChangeAdminIdModal();
+        showToast(`✏️ Admin User ID updated to "${newId}"`, "success");
+        loadAdminAccounts();
+    } catch (err) {
+        showToast(`⚠️ ${err.message}`, "error");
+    }
+}
+
+// 9. Owner Management: Change Admin Password
+function openChangeAdminPasswordModal(id, name) {
+    const modal = document.getElementById("adminChangePasswordModal");
+    const targetId = document.getElementById("adminPasswordTargetDbId");
+    const targetName = document.getElementById("adminChangePasswordTargetName");
+    const inputNew = document.getElementById("adminNewPasswordInput");
+    const inputConfirm = document.getElementById("adminConfirmPasswordInput");
+
+    if (targetId) targetId.value = id;
+    if (targetName) targetName.textContent = name;
+    if (inputNew) inputNew.value = "";
+    if (inputConfirm) inputConfirm.value = "";
+    if (modal) modal.style.display = "flex";
+}
+
+function closeChangeAdminPasswordModal() {
+    const modal = document.getElementById("adminChangePasswordModal");
+    if (modal) modal.style.display = "none";
+}
+
+async function submitChangeAdminPassword(event) {
+    if (event) event.preventDefault();
+    const id = document.getElementById("adminPasswordTargetDbId").value;
+    const p1 = document.getElementById("adminNewPasswordInput").value;
+    const p2 = document.getElementById("adminConfirmPasswordInput").value;
+
+    if (p1.length < 6) {
+        showToast("⚠️ Password must be at least 6 characters long.", "warning");
+        return;
+    }
+    if (p1 !== p2) {
+        showToast("⚠️ Passwords do not match.", "warning");
+        return;
+    }
+
+    try {
+        const res = await authFetch(`${API_BASE}/api/admin/manage/${id}/password`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ new_password: p1 })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Failed to update password.");
+
+        closeChangeAdminPasswordModal();
+        showToast("🔑 Admin password updated successfully!", "success");
+    } catch (err) {
+        showToast(`⚠️ ${err.message}`, "error");
+    }
+}
+
+// 10. Owner Management: Toggle Admin Status (Enable / Disable)
+async function toggleAdminStatus(id, currentStatus) {
+    const newStatus = !currentStatus;
+    try {
+        const res = await authFetch(`${API_BASE}/api/admin/manage/${id}/status`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ is_active: newStatus })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Failed to update status.");
+
+        showToast(`Admin account ${newStatus ? 'enabled' : 'disabled'}.`, "info");
+        loadAdminAccounts();
+    } catch (err) {
+        showToast(`⚠️ ${err.message}`, "error");
+    }
+}
+
+// 11. Owner Management: Delete Admin Account
+async function deleteAdminAccount(id, name) {
+    if (!confirm(`Are you sure you want to permanently delete admin account "${name}"?`)) {
+        return;
+    }
+
+    try {
+        const res = await authFetch(`${API_BASE}/api/admin/manage/${id}/delete`, {
+            method: "DELETE"
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Failed to delete admin account.");
+
+        showToast(`🗑️ Admin account "${name}" deleted.`, "info");
+        loadAdminAccounts();
+    } catch (err) {
+        showToast(`⚠️ ${err.message}`, "error");
+    }
+}
+
+// 12. Owner Management: Reset Demo Database
+function openResetDemoModal() {
+    const modal = document.getElementById("adminResetDemoModal");
+    const checkbox = document.getElementById("resetDemoConfirmCheckbox");
+    if (checkbox) checkbox.checked = false;
+    if (modal) modal.style.display = "flex";
+}
+
+function closeResetDemoModal() {
+    const modal = document.getElementById("adminResetDemoModal");
+    if (modal) modal.style.display = "none";
+}
+
+async function submitResetDemoDatabase() {
+    const checkbox = document.getElementById("resetDemoConfirmCheckbox");
+    if (!checkbox || !checkbox.checked) {
+        showToast("⚠️ Please check the confirmation box before resetting.", "warning");
+        return;
+    }
+
+    const btn = document.getElementById("confirmResetDemoBtn");
+    const originalText = btn ? btn.innerHTML : "🧹 Confirm & Reset";
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span>⏳ Resetting Database...</span>`;
+    }
+
+    try {
+        const res = await authFetch(`${API_BASE}/api/admin/reset-demo-data`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ confirm: true })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Failed to reset demo database.");
+
+        closeResetDemoModal();
+        showToast("🧹 Demo database successfully reset to seed state!", "success");
+
+        // Reload products and refresh admin data
+        await loadProducts();
+        refreshCurrentAdminTab();
+    } catch (err) {
+        console.error("Demo reset error:", err);
+        showToast(`⚠️ ${err.message}`, "error");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+}
+
+// Helper: HTML escape for safe table rendering
+function escapeHtml(str) {
+    if (!str) return "";
+    return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
 }
 
 // Fetch Farmer's Listed Produce, KPIs & Stock Clearance from Database
@@ -2309,7 +3144,11 @@ async function loadOrderHistory(btn = null) {
     }
 
     try {
-        const res = await fetch(`${API_BASE}/api/orders`);
+        let ordersUrl = `${API_BASE}/api/orders`;
+        if (state.currentUser && state.currentUser.role === "buyer" && state.currentUser.name) {
+            ordersUrl += `?buyer_name=${encodeURIComponent(state.currentUser.name)}`;
+        }
+        const res = await fetch(ordersUrl);
         if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to load orders`);
         const orders = await res.json();
 

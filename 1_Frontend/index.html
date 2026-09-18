@@ -259,16 +259,16 @@
             <div class="portal-box">
                 <div class="portal-intro">
                     <h2>Select Login Option</h2>
-                    <p>Choose your role to continue: Are you listing crops as a <strong>Farmer</strong> or procuring produce as a <strong>Buyer</strong>?</p>
+                    <p>Choose your role to continue: Are you a <strong>Farmer</strong>, a <strong>Buyer</strong>, or a <strong>Team Admin / Owner</strong>?</p>
                 </div>
 
-                <!-- 2-Option Role Switcher Tabs -->
+                <!-- 3-Option Role Switcher Tabs -->
                 <div class="portal-role-tabs">
                     <button type="button" class="portal-tab-btn active" id="portalTabFarmer" onclick="setPortalRole('farmer')">
                         <span class="portal-tab-icon">🌾</span>
                         <div>
                             <div class="portal-tab-title">Farmer (किसान)</div>
-                            <div class="portal-tab-subtitle">Enter & List Your Crops</div>
+                            <div class="portal-tab-subtitle">Login or Register Crops</div>
                         </div>
                     </button>
                     <button type="button" class="portal-tab-btn" id="portalTabBuyer" onclick="setPortalRole('buyer')">
@@ -278,94 +278,196 @@
                             <div class="portal-tab-subtitle">Procure & View Market Crops</div>
                         </div>
                     </button>
+                    <button type="button" class="portal-tab-btn" id="portalTabAdmin" onclick="setPortalRole('admin')">
+                        <span class="portal-tab-icon">🛡️</span>
+                        <div>
+                            <div class="portal-tab-title">Admin / Team</div>
+                            <div class="portal-tab-subtitle">Operations & Control</div>
+                        </div>
+                    </button>
                 </div>
 
-                <!-- 1. FARMER LOGIN FORM -->
+                <!-- ==========================================================
+                     1. FARMER SECTION (Separate Login vs Registration)
+                     ========================================================== -->
                 <div id="portalFarmerSection" class="portal-form-container active">
-                    <div class="portal-form-header">
-                        <h3>👨‍🌾 Farmer Registration & Crop Listing</h3>
-                        <p>Manually enter your personal details and commodity harvest to store in the database.</p>
+                    <div style="display:flex; justify-content:center; gap:8px; margin-bottom:16px; background:#f1f5f9; padding:4px; border-radius:8px;">
+                        <button type="button" class="sub-mode-btn active" id="farmerSubModeLogin" onclick="setFarmerAuthMode('login')" style="flex:1; padding:8px 12px; font-weight:700; font-size:13px; border:none; border-radius:6px; cursor:pointer; background:#ffffff; color:#16a34a; box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+                            🔑 Farmer Login
+                        </button>
+                        <button type="button" class="sub-mode-btn" id="farmerSubModeRegister" onclick="setFarmerAuthMode('register')" style="flex:1; padding:8px 12px; font-weight:700; font-size:13px; border:none; border-radius:6px; cursor:pointer; background:transparent; color:#64748b;">
+                            📝 New Registration
+                        </button>
                     </div>
 
-                    <form id="portalFarmerForm" onsubmit="handlePortalFarmerSubmit(event)">
-                        <div class="portal-form-grid">
-                            <div class="form-field">
-                                <label for="farmerNameInput">Farmer Full Name <span class="req">*</span></label>
-                                <input type="text" id="farmerNameInput" placeholder="e.g. Ramesh Kumar" required>
-                            </div>
-                            <div class="form-field">
-                                <label for="farmerPhoneInput">Phone Number <span class="req">*</span></label>
-                                <input type="tel" id="farmerPhoneInput" placeholder="e.g. 9876543210" required>
-                            </div>
-                            <div class="form-field col-span-2">
-                                <label for="farmerAddressInput">Village / Farm Gate Address <span class="req">*</span></label>
-                                <input type="text" id="farmerAddressInput" placeholder="e.g. Singur Village, Hooghly District" required>
-                            </div>
-                            <div class="form-field">
-                                <label for="farmerStateInput">State Name <span class="req">*</span></label>
-                                <input type="text" id="farmerStateInput" list="indianStatesList" placeholder="e.g. West Bengal" value="West Bengal" required>
-                            </div>
-                            <div class="form-field">
-                                <label for="farmerPincodeInput">Postal Pincode <span class="req">*</span></label>
-                                <input type="text" id="farmerPincodeInput" placeholder="e.g. 712409" required>
-                            </div>
-                            <div class="form-field col-span-2">
-                                <label for="farmerCropInput">Commodity / Crop Name <span class="req">*</span></label>
-                                <input type="text" id="farmerCropInput" list="commonCropsList" placeholder="Type crop name freely (e.g. Potato, Tomato, Wheat, Onion, Rice, Mustard...)" required>
-                            </div>
-                            <div class="form-field">
-                                <label for="farmerQtyInput">Quantity Available (kg) <span class="req">*</span></label>
-                                <input type="number" id="farmerQtyInput" step="any" placeholder="e.g. 5000" required>
-                            </div>
-                            <div class="form-field">
-                                <label for="farmerPriceInput">Desired Price per kg (₹/kg) <span class="req">*</span></label>
-                                <input type="number" id="farmerPriceInput" step="any" placeholder="e.g. 18.50" required>
-                            </div>
+                    <!-- 1A. Farmer Login Form -->
+                    <div id="farmerLoginContainer">
+                        <div class="portal-form-header">
+                            <h3>👨‍🌾 Farmer Login</h3>
+                            <p>Enter your registered full name and phone number to access your dashboard and produce.</p>
                         </div>
+                        <form id="farmerLoginForm" onsubmit="handleFarmerLoginSubmit(event)">
+                            <div class="portal-form-grid">
+                                <div class="form-field col-span-2">
+                                    <label for="farmerLoginNameInput">Registered Name <span class="req">*</span></label>
+                                    <input type="text" id="farmerLoginNameInput" placeholder="e.g. Ramesh Kumar" required>
+                                </div>
+                                <div class="form-field col-span-2">
+                                    <label for="farmerLoginPhoneInput">Registered Phone Number <span class="req">*</span></label>
+                                    <input type="tel" id="farmerLoginPhoneInput" placeholder="e.g. 9876543210" required>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn-primary portal-submit-btn" id="farmerLoginSubmitBtn" style="margin-top:14px;">
+                                🌾 Login as Farmer
+                            </button>
+                        </form>
+                    </div>
 
-                        <button type="submit" class="btn-primary portal-submit-btn" id="portalFarmerSubmitBtn">
-                            🌾 Save Produce to Database & Enter Platform
-                        </button>
-                    </form>
+                    <!-- 1B. Farmer Registration Form -->
+                    <div id="farmerRegisterContainer" style="display:none;">
+                        <div class="portal-form-header">
+                            <h3>👨‍🌾 New Farmer Registration</h3>
+                            <p>Register your farm gate location and initial crop harvest in the platform database.</p>
+                        </div>
+                        <form id="farmerRegisterForm" onsubmit="handleFarmerRegisterSubmit(event)">
+                            <div class="portal-form-grid">
+                                <div class="form-field">
+                                    <label for="farmerRegisterNameInput">Farmer Full Name <span class="req">*</span></label>
+                                    <input type="text" id="farmerRegisterNameInput" placeholder="e.g. Ramesh Kumar" required>
+                                </div>
+                                <div class="form-field">
+                                    <label for="farmerRegisterPhoneInput">Phone Number <span class="req">*</span></label>
+                                    <input type="tel" id="farmerRegisterPhoneInput" placeholder="e.g. 9876543210" required>
+                                </div>
+                                <div class="form-field col-span-2">
+                                    <label for="farmerRegisterAddressInput">Village / Farm Gate Address <span class="req">*</span></label>
+                                    <input type="text" id="farmerRegisterAddressInput" placeholder="e.g. Singur Village, Hooghly District" required>
+                                </div>
+                                <div class="form-field">
+                                    <label for="farmerRegisterStateInput">State Name <span class="req">*</span></label>
+                                    <input type="text" id="farmerRegisterStateInput" list="indianStatesList" placeholder="e.g. West Bengal" value="West Bengal" required>
+                                </div>
+                                <div class="form-field">
+                                    <label for="farmerRegisterPincodeInput">Postal Pincode <span class="req">*</span></label>
+                                    <input type="text" id="farmerRegisterPincodeInput" placeholder="e.g. 712409" required>
+                                </div>
+                                <div class="form-field col-span-2">
+                                    <label for="farmerRegisterCropInput">Commodity / Crop Name <span class="req">*</span></label>
+                                    <input type="text" id="farmerRegisterCropInput" list="commonCropsList" placeholder="Type crop freely (e.g. Tomato, Potato, Red Onion, Wheat...)" required>
+                                </div>
+                                <div class="form-field">
+                                    <label for="farmerRegisterQtyInput">Available Quantity (kg) <span class="req">*</span></label>
+                                    <input type="number" id="farmerRegisterQtyInput" step="any" placeholder="e.g. 5000" required>
+                                </div>
+                                <div class="form-field">
+                                    <label for="farmerRegisterPriceInput">Desired Price (₹/kg) <span class="req">*</span></label>
+                                    <input type="number" id="farmerRegisterPriceInput" step="any" placeholder="e.g. 20.00" required>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn-primary portal-submit-btn" id="farmerRegisterSubmitBtn" style="margin-top:14px;">
+                                📝 Register as Farmer
+                            </button>
+                        </form>
+                    </div>
                 </div>
 
-                <!-- 2. BUYER LOGIN FORM -->
+                <!-- ==========================================================
+                     2. BUYER SECTION (Separate Login vs Registration)
+                     ========================================================== -->
                 <div id="portalBuyerSection" class="portal-form-container" style="display:none;">
-                    <div class="portal-form-header">
-                        <h3>🏢 Buyer & Wholesaler Login</h3>
-                        <p>Manually enter your organization and delivery details to access all crop listings.</p>
+                    <div style="display:flex; justify-content:center; gap:8px; margin-bottom:16px; background:#f1f5f9; padding:4px; border-radius:8px;">
+                        <button type="button" class="sub-mode-btn active" id="buyerSubModeLogin" onclick="setBuyerAuthMode('login')" style="flex:1; padding:8px 12px; font-weight:700; font-size:13px; border:none; border-radius:6px; cursor:pointer; background:#ffffff; color:#2563eb; box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+                            🔑 Buyer Login
+                        </button>
+                        <button type="button" class="sub-mode-btn" id="buyerSubModeRegister" onclick="setBuyerAuthMode('register')" style="flex:1; padding:8px 12px; font-weight:700; font-size:13px; border:none; border-radius:6px; cursor:pointer; background:transparent; color:#64748b;">
+                            📝 New Registration
+                        </button>
                     </div>
 
-                    <form id="portalBuyerForm" onsubmit="handlePortalBuyerSubmit(event)">
+                    <!-- 2A. Buyer Login Form -->
+                    <div id="buyerLoginContainer">
+                        <div class="portal-form-header">
+                            <h3>🏢 Buyer & Wholesaler Login</h3>
+                            <p>Enter your registered enterprise name and phone number to access procurement orders and live crop supplies.</p>
+                        </div>
+                        <form id="buyerLoginForm" onsubmit="handleBuyerLoginSubmit(event)">
+                            <div class="portal-form-grid">
+                                <div class="form-field col-span-2">
+                                    <label for="buyerLoginNameInput">Registered Buyer / Enterprise Name <span class="req">*</span></label>
+                                    <input type="text" id="buyerLoginNameInput" placeholder="e.g. Posta Wholesale Procurement Hub" required>
+                                </div>
+                                <div class="form-field col-span-2">
+                                    <label for="buyerLoginPhoneInput">Registered Phone Number <span class="req">*</span></label>
+                                    <input type="tel" id="buyerLoginPhoneInput" placeholder="e.g. 9830112233" required>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn-primary portal-submit-btn" id="buyerLoginSubmitBtn" style="background:#2563eb; margin-top:14px;">
+                                🏢 Login as Buyer
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- 2B. Buyer Registration Form -->
+                    <div id="buyerRegisterContainer" style="display:none;">
+                        <div class="portal-form-header">
+                            <h3>🏢 New Buyer Registration</h3>
+                            <p>Register your wholesale, retail chain, or processing enterprise permanently in the database.</p>
+                        </div>
+                        <form id="buyerRegisterForm" onsubmit="handleBuyerRegisterSubmit(event)">
+                            <div class="portal-form-grid">
+                                <div class="form-field col-span-2">
+                                    <label for="buyerRegisterNameInput">Enterprise / Buyer Name <span class="req">*</span></label>
+                                    <input type="text" id="buyerRegisterNameInput" placeholder="e.g. Metro Food Retailers Ltd." required>
+                                </div>
+                                <div class="form-field col-span-2">
+                                    <label for="buyerRegisterAddressInput">Delivery Address / Central Depot <span class="req">*</span></label>
+                                    <input type="text" id="buyerRegisterAddressInput" placeholder="e.g. Posta Wholesale Market" required>
+                                </div>
+                                <div class="form-field">
+                                    <label for="buyerRegisterCityInput">City / District <span class="req">*</span></label>
+                                    <input type="text" id="buyerRegisterCityInput" placeholder="e.g. Kolkata" required>
+                                </div>
+                                <div class="form-field">
+                                    <label for="buyerRegisterStateInput">State Name <span class="req">*</span></label>
+                                    <input type="text" id="buyerRegisterStateInput" list="indianStatesList" placeholder="e.g. West Bengal" value="West Bengal" required>
+                                </div>
+                                <div class="form-field">
+                                    <label for="buyerRegisterPincodeInput">Pincode <span class="req">*</span></label>
+                                    <input type="text" id="buyerRegisterPincodeInput" placeholder="e.g. 700007" required>
+                                </div>
+                                <div class="form-field">
+                                    <label for="buyerRegisterPhoneInput">Contact Phone Number <span class="req">*</span></label>
+                                    <input type="tel" id="buyerRegisterPhoneInput" placeholder="e.g. 9830123456" required>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn-primary portal-submit-btn" id="buyerRegisterSubmitBtn" style="background:#2563eb; margin-top:14px;">
+                                📝 Register as Buyer
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- ==========================================================
+                     3. ADMIN / OWNER SECTION (Strict Admin Authorization)
+                     ========================================================== -->
+                <div id="portalAdminSection" class="portal-form-container" style="display:none;">
+                    <div class="portal-form-header">
+                        <h3>🛡️ Team Admin & Owner Login</h3>
+                        <p>Enter your authorized Admin User ID and Password to manage platform operations and configurations.</p>
+                    </div>
+                    <form id="portalAdminForm" onsubmit="handleAdminLoginSubmit(event)">
                         <div class="portal-form-grid">
                             <div class="form-field col-span-2">
-                                <label for="buyerNameInput">Buyer / Enterprise Name <span class="req">*</span></label>
-                                <input type="text" id="buyerNameInput" placeholder="e.g. Priya Sharma (BigBasket Procurement)" required>
+                                <label for="adminUserIdInput">Admin User ID <span class="req">*</span></label>
+                                <input type="text" id="adminUserIdInput" placeholder="e.g. owner or ADMIN-01" required autocomplete="username">
                             </div>
                             <div class="form-field col-span-2">
-                                <label for="buyerAddressInput">Delivery Address / Wholesale Hub <span class="req">*</span></label>
-                                <input type="text" id="buyerAddressInput" placeholder="e.g. Posta Wholesale Market" required>
-                            </div>
-                            <div class="form-field">
-                                <label for="buyerCityInput">City <span class="req">*</span></label>
-                                <input type="text" id="buyerCityInput" placeholder="e.g. Kolkata" required>
-                            </div>
-                            <div class="form-field">
-                                <label for="buyerStateInput">State Name <span class="req">*</span></label>
-                                <input type="text" id="buyerStateInput" list="indianStatesList" placeholder="e.g. West Bengal" value="West Bengal" required>
-                            </div>
-                            <div class="form-field">
-                                <label for="buyerPincodeInput">Pincode <span class="req">*</span></label>
-                                <input type="text" id="buyerPincodeInput" placeholder="e.g. 700007" required>
-                            </div>
-                            <div class="form-field">
-                                <label for="buyerPhoneInput">Phone Number <span class="req">*</span></label>
-                                <input type="tel" id="buyerPhoneInput" placeholder="e.g. 9830123456" required>
+                                <label for="adminPasswordInput">Password <span class="req">*</span></label>
+                                <input type="password" id="adminPasswordInput" placeholder="••••••••••••" required autocomplete="current-password">
                             </div>
                         </div>
-
-                        <button type="submit" class="btn-primary portal-submit-btn" style="background:#2563eb;" id="portalBuyerSubmitBtn">
-                            🏢 Login & View Crop Details
+                        <button type="submit" class="btn-primary portal-submit-btn" id="adminLoginSubmitBtn" style="background:#0f172a; margin-top:14px;">
+                            🛡️ Login to Admin Portal
                         </button>
                     </form>
                 </div>
@@ -405,6 +507,16 @@
             <button class="nav-tab" onclick="scrollToFarmerSection('farmerForecastSection')">📈 ML Demand Forecast</button>
             <button class="nav-tab" onclick="scrollToFarmerSection('farmerAddCropSection')">➕ List Crop</button>
             <button class="nav-tab" onclick="scrollToFarmerSection('farmerMandiSection')">💡 Mandi Rates</button>
+        </nav>
+
+        <!-- Admin Navigation Links (Shown when Admin or Owner is active) -->
+        <nav class="nav-links" id="adminNavLinks" style="display:none;">
+            <button class="nav-tab active" id="adminNavTabOverview" onclick="switchAdminTab('overview')">📊 Overview</button>
+            <button class="nav-tab" id="adminNavTabFarmers" onclick="switchAdminTab('farmers')">🌾 Farmers</button>
+            <button class="nav-tab" id="adminNavTabBuyers" onclick="switchAdminTab('buyers')">🏢 Buyers</button>
+            <button class="nav-tab" id="adminNavTabSupplies" onclick="switchAdminTab('supplies')">📦 Supplies</button>
+            <button class="nav-tab" id="adminNavTabOrders" onclick="switchAdminTab('orders')">📜 Platform Orders</button>
+            <button class="nav-tab highlight" id="adminNavTabManagement" style="display:none;" onclick="switchAdminTab('management')">🛡️ Admin Team (Owner)</button>
         </nav>
 
         <div class="navbar-actions">
@@ -1274,6 +1386,324 @@
         </div>
 
         </div> <!-- End #buyerDashboardSection -->
+
+        <!-- ==================================================================
+             ADMIN / OWNER OPERATIONAL DASHBOARD
+             ================================================================== -->
+        <div id="adminDashboardSection" style="display:none;">
+            <!-- Admin Top Welcome Banner -->
+            <div class="admin-welcome-banner" style="background: linear-gradient(135deg, #0f172a, #1e293b); color: white; border: 1px solid #334155; margin-bottom: 24px; border-radius: 16px; padding: 24px 28px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 10px 25px rgba(15,23,42,0.15);">
+                <div style="display: flex; align-items: center; gap: 18px;">
+                    <div style="width: 56px; height: 56px; border-radius: 12px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; font-size: 28px;">
+                        🛡️
+                    </div>
+                    <div>
+                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px;">
+                            <h2 style="font-size: 20px; font-weight: 800; margin: 0; color: #f8fafc;" id="adminBannerName">Admin Console</h2>
+                            <span id="adminBannerRoleBadge" style="background: #3b82f6; color: white; font-size: 11px; font-weight: 800; padding: 3px 8px; border-radius: 6px; letter-spacing: 0.5px;">ADMIN</span>
+                        </div>
+                        <div style="font-size: 13px; color: #94a3b8;">
+                            Logged in as: <strong style="color: #cbd5e1;" id="adminBannerUserId">admin</strong> • System Access: <span style="color: #4ade80;" id="adminBannerRoleDesc">Platform Operations</span>
+                        </div>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <button type="button" class="btn-sm" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: #f8fafc; font-weight: 600; padding: 8px 14px; border-radius: 8px; cursor: pointer;" onclick="refreshCurrentAdminTab()">
+                        🔄 Refresh Data
+                    </button>
+                </div>
+            </div>
+
+            <!-- TAB 1: OVERVIEW -->
+            <div id="adminTabPaneOverview" class="admin-tab-pane">
+                <!-- 5 Admin KPIs -->
+                <div class="kpi-grid mb-4" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px;">
+                    <div class="kpi-card" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                        <div style="font-size: 12px; font-weight: 700; color: #16a34a; text-transform: uppercase; margin-bottom: 6px;">🌾 Registered Farmers</div>
+                        <div style="font-size: 28px; font-weight: 800; color: #1e293b;" id="adminKpiTotalFarmers">--</div>
+                        <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Active supply producers</div>
+                    </div>
+                    <div class="kpi-card" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                        <div style="font-size: 12px; font-weight: 700; color: #2563eb; text-transform: uppercase; margin-bottom: 6px;">🏢 Registered Buyers</div>
+                        <div style="font-size: 28px; font-weight: 800; color: #1e293b;" id="adminKpiTotalBuyers">--</div>
+                        <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Procurement enterprises</div>
+                    </div>
+                    <div class="kpi-card" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                        <div style="font-size: 12px; font-weight: 700; color: #ea580c; text-transform: uppercase; margin-bottom: 6px;">📦 Listed Produce</div>
+                        <div style="font-size: 28px; font-weight: 800; color: #1e293b;" id="adminKpiTotalSuppliesKg">-- kg</div>
+                        <div style="font-size: 12px; color: #64748b; margin-top: 4px;"><span id="adminKpiTotalSuppliesCount">--</span> active listings</div>
+                    </div>
+                    <div class="kpi-card" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                        <div style="font-size: 12px; font-weight: 700; color: #0891b2; text-transform: uppercase; margin-bottom: 6px;">📜 Executed Orders</div>
+                        <div style="font-size: 28px; font-weight: 800; color: #1e293b;" id="adminKpiTotalOrdersValue">₹ --</div>
+                        <div style="font-size: 12px; color: #64748b; margin-top: 4px;"><span id="adminKpiTotalOrdersCount">--</span> dispatched orders</div>
+                    </div>
+                    <div class="kpi-card" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+                        <div style="font-size: 12px; font-weight: 700; color: #7c3aed; text-transform: uppercase; margin-bottom: 6px;">🛡️ Team Admins</div>
+                        <div style="font-size: 28px; font-weight: 800; color: #1e293b;" id="adminKpiActiveAdmins">-- / 6</div>
+                        <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Operator accounts</div>
+                    </div>
+                </div>
+
+                <!-- Platform Quick Cards -->
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px;">
+                    <div class="card panel-card" style="background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:22px;">
+                        <h4 style="margin:0 0 12px 0; font-size:16px; font-weight:700; color:#1e293b;">⚡ System Engine & Architecture Health</h4>
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px; margin-top:16px;">
+                            <div style="padding:14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px;">
+                                <div style="font-weight:700; font-size:13px; color:#334155;">🧠 ML Forecasting Model</div>
+                                <div style="font-size:12px; color:#64748b; margin-top:4px;">OLS Linear Regression with 7-Day Day-of-Week Seasonality</div>
+                                <span style="display:inline-block; margin-top:8px; font-size:11px; font-weight:700; background:#dcfce7; color:#15803d; padding:2px 8px; border-radius:4px;">Active & Running</span>
+                            </div>
+                            <div style="padding:14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px;">
+                                <div style="font-weight:700; font-size:13px; color:#334155;">🚚 Logistics & Optimization</div>
+                                <div style="font-size:12px; color:#64748b; margin-top:4px;">2-Opt Traveling Salesperson (TSP) + Haversine Routing Engine</div>
+                                <span style="display:inline-block; margin-top:8px; font-size:11px; font-weight:700; background:#dcfce7; color:#15803d; padding:2px 8px; border-radius:4px;">Operational</span>
+                            </div>
+                            <div style="padding:14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px;">
+                                <div style="font-weight:700; font-size:13px; color:#334155;">🔒 Security & Authorization</div>
+                                <div style="font-size:12px; color:#64748b; margin-top:4px;">PBKDF2-HMAC-SHA256 (100k iters) + Signed HMAC Tokens</div>
+                                <span style="display:inline-block; margin-top:8px; font-size:11px; font-weight:700; background:#eff6ff; color:#1d4ed8; padding:2px 8px; border-radius:4px;">Strict Backend RBAC</span>
+                            </div>
+                            <div style="padding:14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px;">
+                                <div style="font-weight:700; font-size:13px; color:#334155;">💾 Database Persistence</div>
+                                <div style="font-size:12px; color:#64748b; margin-top:4px;">SQLite with WAL mode (agriconnect.db)</div>
+                                <span style="display:inline-block; margin-top:8px; font-size:11px; font-weight:700; background:#f0fdf4; color:#15803d; padding:2px 8px; border-radius:4px;">Connected</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card panel-card" style="background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:22px;">
+                        <h4 style="margin:0 0 12px 0; font-size:16px; font-weight:700; color:#1e293b;">🚀 Quick Operations</h4>
+                        <p style="font-size:13px; color:#64748b; line-height:1.5;">Direct shortcuts to view real-time records and monitor agricultural clearing:</p>
+                        <div style="display:flex; flex-direction:column; gap:8px; margin-top:14px;">
+                            <button type="button" class="btn-sm" style="text-align:left; padding:10px 14px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; font-weight:600; cursor:pointer;" onclick="switchAdminTab('farmers')">🌾 View Farmers Directory</button>
+                            <button type="button" class="btn-sm" style="text-align:left; padding:10px 14px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; font-weight:600; cursor:pointer;" onclick="switchAdminTab('buyers')">🏢 View Buyers Directory</button>
+                            <button type="button" class="btn-sm" style="text-align:left; padding:10px 14px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; font-weight:600; cursor:pointer;" onclick="switchAdminTab('supplies')">📦 View Live Supplies</button>
+                            <button type="button" class="btn-sm" style="text-align:left; padding:10px 14px; background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; font-weight:600; cursor:pointer;" onclick="switchAdminTab('orders')">📜 View Platform Orders</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 2: FARMERS DIRECTORY -->
+            <div id="adminTabPaneFarmers" class="admin-tab-pane" style="display:none;">
+                <div class="card panel-card" style="background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:22px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                        <div>
+                            <h4 style="margin:0; font-size:17px; font-weight:700; color:#1e293b;">🌾 Registered Farmers Directory</h4>
+                            <p style="margin:4px 0 0 0; font-size:13px; color:#64748b;">Complete list of verified farmers registered in the platform database</p>
+                        </div>
+                        <button class="btn-sm" onclick="loadAdminFarmers()">🔄 Refresh</button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Farmer ID</th>
+                                    <th>Name</th>
+                                    <th>Phone</th>
+                                    <th>Address / Village</th>
+                                    <th>State</th>
+                                    <th>Pincode</th>
+                                    <th>Registered On</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminFarmersTableBody">
+                                <tr><td colspan="7" class="text-muted text-center py-3">Loading farmers...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 3: BUYERS DIRECTORY -->
+            <div id="adminTabPaneBuyers" class="admin-tab-pane" style="display:none;">
+                <div class="card panel-card" style="background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:22px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                        <div>
+                            <h4 style="margin:0; font-size:17px; font-weight:700; color:#1e293b;">🏢 Registered Buyers & Enterprises Directory</h4>
+                            <p style="margin:4px 0 0 0; font-size:13px; color:#64748b;">All wholesale hubs, processing firms, and institutional buyers</p>
+                        </div>
+                        <button class="btn-sm" onclick="loadAdminBuyers()">🔄 Refresh</button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Buyer ID</th>
+                                    <th>Enterprise / Name</th>
+                                    <th>Phone</th>
+                                    <th>Depot / Address</th>
+                                    <th>City</th>
+                                    <th>State</th>
+                                    <th>Pincode</th>
+                                    <th>Registered On</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminBuyersTableBody">
+                                <tr><td colspan="8" class="text-muted text-center py-3">Loading buyers...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 4: SUPPLIES INVENTORY -->
+            <div id="adminTabPaneSupplies" class="admin-tab-pane" style="display:none;">
+                <div class="card panel-card" style="background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:22px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                        <div>
+                            <h4 style="margin:0; font-size:17px; font-weight:700; color:#1e293b;">📦 Listed Produce & Farm Inventory</h4>
+                            <p style="margin:4px 0 0 0; font-size:13px; color:#64748b;">Real-time farm produce listings aggregated across registered growers</p>
+                        </div>
+                        <button class="btn-sm" onclick="loadAdminSupplies()">🔄 Refresh</button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Supply ID</th>
+                                    <th>Farmer ID</th>
+                                    <th>Farmer Name</th>
+                                    <th>Commodity</th>
+                                    <th>Available Qty</th>
+                                    <th>Asking Price</th>
+                                    <th>Quality Grade</th>
+                                    <th>Listed Date</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminSuppliesTableBody">
+                                <tr><td colspan="8" class="text-muted text-center py-3">Loading supplies...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 5: PLATFORM ORDERS -->
+            <div id="adminTabPaneOrders" class="admin-tab-pane" style="display:none;">
+                <div class="card panel-card" style="background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:22px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                        <div>
+                            <h4 style="margin:0; font-size:17px; font-weight:700; color:#1e293b;">📜 Platform Procurement Orders</h4>
+                            <p style="margin:4px 0 0 0; font-size:13px; color:#64748b;">Executed multi-farmer clearing contracts and dispatch milestones</p>
+                        </div>
+                        <button class="btn-sm" onclick="loadAdminOrders()">🔄 Refresh</button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Order #</th>
+                                    <th>Order Date</th>
+                                    <th>Buyer Name</th>
+                                    <th>Commodity</th>
+                                    <th>Total Volume</th>
+                                    <th>Total Value</th>
+                                    <th>Logistics Route</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminOrdersTableBody">
+                                <tr><td colspan="8" class="text-muted text-center py-3">Loading orders...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 6: ADMIN TEAM MANAGEMENT & DEMO RESET (OWNER ONLY) -->
+            <div id="adminTabPaneManagement" class="admin-tab-pane" style="display:none;">
+                <!-- Quota & Info Alert -->
+                <div style="background:#f5f3ff; border:1px solid #ddd6fe; border-radius:12px; padding:18px 22px; margin-bottom:24px; display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <h4 style="margin:0 0 4px 0; color:#5b21b6; font-size:16px; font-weight:800;">🛡️ Super Administrator (Owner) Control Panel</h4>
+                        <p style="margin:0; font-size:13px; color:#6d28d9; line-height:1.4;">
+                            You have exclusive authority to create up to 6 operational Team Admin accounts, change their credentials, toggle active status, or safely reset demo database records.
+                        </p>
+                    </div>
+                    <div style="text-align:right;">
+                        <span style="display:inline-block; background:#7c3aed; color:white; font-size:14px; font-weight:800; padding:6px 14px; border-radius:20px;" id="adminQuotaBadge">
+                            Admins: 0 / 6
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Create New Team Admin Form -->
+                <div class="card panel-card mb-4" style="background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:22px; margin-bottom:24px;">
+                    <h4 style="margin:0 0 8px 0; font-size:16px; font-weight:700; color:#1e293b;">➕ Create New Team Admin Account</h4>
+                    <p style="font-size:13px; color:#64748b; margin-bottom:16px;">Team Admins receive operational read access to monitor Farmers, Buyers, Supplies, Orders, and System KPIs.</p>
+                    
+                    <form id="createAdminForm" onsubmit="handleCreateAdminSubmit(event)">
+                        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:14px;">
+                            <div class="form-group">
+                                <label style="display:block; font-size:12px; font-weight:700; color:#475569; margin-bottom:4px;">Admin Full Name *</label>
+                                <input type="text" id="newAdminNameInput" placeholder="e.g. Operations Manager" required class="form-control" style="width:100%; padding:9px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; box-sizing:border-box;">
+                            </div>
+                            <div class="form-group">
+                                <label style="display:block; font-size:12px; font-weight:700; color:#475569; margin-bottom:4px;">Admin User ID *</label>
+                                <input type="text" id="newAdminUserIdInput" placeholder="e.g. ADMIN-01 or ops_kolkata" required class="form-control" style="width:100%; padding:9px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; box-sizing:border-box;">
+                            </div>
+                            <div class="form-group">
+                                <label style="display:block; font-size:12px; font-weight:700; color:#475569; margin-bottom:4px;">Password (min 6 chars) *</label>
+                                <input type="password" id="newAdminPasswordInput" placeholder="••••••••" required minlength="6" class="form-control" style="width:100%; padding:9px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; box-sizing:border-box;">
+                            </div>
+                        </div>
+                        <div style="margin-top:16px; display:flex; justify-content:flex-end;">
+                            <button type="submit" id="createAdminBtn" class="btn-primary" style="background:#7c3aed; padding:10px 20px; font-weight:700; border-radius:8px; cursor:pointer;">
+                                🛡️ Create Admin Account
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Admin Accounts Table -->
+                <div class="card panel-card mb-4" style="background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; padding:22px; margin-bottom:24px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                        <div>
+                            <h4 style="margin:0; font-size:16px; font-weight:700; color:#1e293b;">👥 System Administrator Accounts</h4>
+                            <p style="margin:4px 0 0 0; font-size:13px; color:#64748b;">Manage operational credentials, access status, and passwords</p>
+                        </div>
+                        <button class="btn-sm" onclick="loadAdminAccounts()">🔄 Refresh</button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Name</th>
+                                    <th>User ID</th>
+                                    <th>Role</th>
+                                    <th>Status</th>
+                                    <th>Created On</th>
+                                    <th style="text-align:center;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminAccountsTableBody">
+                                <tr><td colspan="7" class="text-muted text-center py-3">Loading accounts...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Danger Zone: Reset Demo Database -->
+                <div class="card panel-card" style="background:#fff1f2; border:1px solid #fecdd3; border-radius:12px; padding:22px;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:20px;">
+                        <div>
+                            <h4 style="margin:0 0 6px 0; font-size:16px; font-weight:800; color:#9f1239;">⚠️ Reset Demo Database (Owner Feature)</h4>
+                            <p style="margin:0; font-size:13px; color:#be123c; line-height:1.5;">
+                                Cleans out all test transactions, contracts, and listed crop supplies, resetting the database back to clean baseline demo seed data.
+                                <br><strong>Note:</strong> Super Admin (Owner) and regular Team Admin accounts are <strong>safely preserved</strong>.
+                            </p>
+                        </div>
+                        <button type="button" class="btn-sm" style="background:#e11d48; color:white; border:none; padding:12px 20px; font-weight:700; border-radius:8px; cursor:pointer; white-space:nowrap; box-shadow:0 2px 8px rgba(225,29,72,0.3);" onclick="openResetDemoModal()">
+                            🧹 Reset Demo Database
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div> <!-- End #adminDashboardSection -->
     </div> <!-- End .app-container -->
     </div> <!-- End #mainPlatformScreen -->
 
@@ -1348,6 +1778,86 @@
                     <button type="submit" id="saveEditProduceBtn" class="btn-primary" style="padding:8px 18px; background:#16a34a; font-weight:700; border-radius:6px; cursor:pointer;">💾 Save Changes</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Admin: Change Admin User ID Modal -->
+    <div id="adminChangeIdModal" class="modal-backdrop" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(15,23,42,0.6); z-index:9999; align-items:center; justify-content:center; backdrop-filter:blur(3px);">
+        <div class="modal-card" style="background:#ffffff; border-radius:12px; width:92%; max-width:440px; box-shadow:0 20px 25px -5px rgba(0,0,0,0.2); overflow:hidden; border:1px solid #e2e8f0; animation: modalPop 0.2s ease-out;">
+            <div style="background:linear-gradient(135deg, #1e293b, #0f172a); color:white; padding:16px 20px; display:flex; justify-content:space-between; align-items:center;">
+                <h3 style="margin:0; font-size:17px; font-weight:700; color:white;">✏️ Change Admin User ID</h3>
+                <button type="button" onclick="closeChangeAdminIdModal()" style="background:none; border:none; color:white; font-size:24px; cursor:pointer; line-height:1;">&times;</button>
+            </div>
+            <form id="adminChangeIdForm" onsubmit="submitChangeAdminId(event)" style="padding:20px;">
+                <input type="hidden" id="adminTargetDbId">
+                <div style="margin-bottom:12px; font-size:13px; color:#64748b;">
+                    Updating User ID for Admin: <strong id="adminChangeIdTargetName" style="color:#1e293b;">--</strong>
+                </div>
+                <div class="form-group mb-3">
+                    <label for="adminNewUserIdInput" style="font-weight:600; font-size:13px; color:#334155; display:block; margin-bottom:4px;">New Admin User ID *</label>
+                    <input type="text" id="adminNewUserIdInput" required class="form-control" placeholder="e.g. ADMIN-02 or ops_manager" style="width:100%; padding:9px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; box-sizing:border-box;">
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px;">
+                    <button type="button" class="btn-sm" onclick="closeChangeAdminIdModal()" style="padding:8px 14px; background:#f1f5f9; border:1px solid #cbd5e1; border-radius:6px; font-weight:600; cursor:pointer;">Cancel</button>
+                    <button type="submit" id="saveAdminIdBtn" class="btn-primary" style="padding:8px 18px; background:#0f172a; font-weight:700; border-radius:6px; cursor:pointer;">💾 Save ID</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Admin: Change Admin Password Modal -->
+    <div id="adminChangePasswordModal" class="modal-backdrop" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(15,23,42,0.6); z-index:9999; align-items:center; justify-content:center; backdrop-filter:blur(3px);">
+        <div class="modal-card" style="background:#ffffff; border-radius:12px; width:92%; max-width:440px; box-shadow:0 20px 25px -5px rgba(0,0,0,0.2); overflow:hidden; border:1px solid #e2e8f0; animation: modalPop 0.2s ease-out;">
+            <div style="background:linear-gradient(135deg, #7c3aed, #6d28d9); color:white; padding:16px 20px; display:flex; justify-content:space-between; align-items:center;">
+                <h3 style="margin:0; font-size:17px; font-weight:700; color:white;">🔑 Change Admin Password</h3>
+                <button type="button" onclick="closeChangeAdminPasswordModal()" style="background:none; border:none; color:white; font-size:24px; cursor:pointer; line-height:1;">&times;</button>
+            </div>
+            <form id="adminChangePasswordForm" onsubmit="submitChangeAdminPassword(event)" style="padding:20px;">
+                <input type="hidden" id="adminPasswordTargetDbId">
+                <div style="margin-bottom:12px; font-size:13px; color:#64748b;">
+                    Updating password for Admin: <strong id="adminChangePasswordTargetName" style="color:#1e293b;">--</strong>
+                </div>
+                <div class="form-group mb-3">
+                    <label for="adminNewPasswordInput" style="font-weight:600; font-size:13px; color:#334155; display:block; margin-bottom:4px;">New Password (min 6 characters) *</label>
+                    <input type="password" id="adminNewPasswordInput" minlength="6" required class="form-control" placeholder="••••••••" style="width:100%; padding:9px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; box-sizing:border-box;">
+                </div>
+                <div class="form-group mb-3">
+                    <label for="adminConfirmPasswordInput" style="font-weight:600; font-size:13px; color:#334155; display:block; margin-bottom:4px;">Confirm New Password *</label>
+                    <input type="password" id="adminConfirmPasswordInput" minlength="6" required class="form-control" placeholder="••••••••" style="width:100%; padding:9px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:14px; box-sizing:border-box;">
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px;">
+                    <button type="button" class="btn-sm" onclick="closeChangeAdminPasswordModal()" style="padding:8px 14px; background:#f1f5f9; border:1px solid #cbd5e1; border-radius:6px; font-weight:600; cursor:pointer;">Cancel</button>
+                    <button type="submit" id="saveAdminPasswordBtn" class="btn-primary" style="padding:8px 18px; background:#7c3aed; font-weight:700; border-radius:6px; cursor:pointer;">🔑 Update Password</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Admin: Reset Demo Database Confirmation Modal -->
+    <div id="adminResetDemoModal" class="modal-backdrop" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(15,23,42,0.6); z-index:9999; align-items:center; justify-content:center; backdrop-filter:blur(3px);">
+        <div class="modal-card" style="background:#ffffff; border-radius:12px; width:92%; max-width:480px; box-shadow:0 20px 25px -5px rgba(0,0,0,0.2); overflow:hidden; border:1px solid #fecdd3; animation: modalPop 0.2s ease-out;">
+            <div style="background:linear-gradient(135deg, #dc2626, #b91c1c); color:white; padding:16px 20px; display:flex; justify-content:space-between; align-items:center;">
+                <h3 style="margin:0; font-size:17px; font-weight:700; color:white;">⚠️ Reset Demo Database</h3>
+                <button type="button" onclick="closeResetDemoModal()" style="background:none; border:none; color:white; font-size:24px; cursor:pointer; line-height:1;">&times;</button>
+            </div>
+            <div style="padding:22px;">
+                <div style="background:#fff1f2; border:1px solid #fecdd3; border-radius:8px; padding:14px; margin-bottom:18px; font-size:13.5px; color:#9f1239; line-height:1.5;">
+                    <strong>Warning:</strong> This operation clears test contracts, orders, and listed supplies, and reseeds initial demo data (crops, sample farmers/buyers, and demand history).
+                    <div style="margin-top:8px; font-weight:700; color:#15803d;">
+                        🛡️ Your Super Admin (Owner) and regular Team Admin accounts are permanently preserved and will NOT be erased.
+                    </div>
+                </div>
+                <div style="margin-bottom:20px; display:flex; align-items:center; gap:10px;">
+                    <input type="checkbox" id="resetDemoConfirmCheckbox" style="width:18px; height:18px; cursor:pointer;">
+                    <label for="resetDemoConfirmCheckbox" style="font-size:13.5px; font-weight:600; color:#1e293b; cursor:pointer;">
+                        I understand and confirm that I want to reset demo data.
+                    </label>
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:10px;">
+                    <button type="button" class="btn-sm" onclick="closeResetDemoModal()" style="padding:9px 16px; background:#f1f5f9; border:1px solid #cbd5e1; border-radius:6px; font-weight:600; cursor:pointer;">Cancel</button>
+                    <button type="button" id="confirmResetDemoBtn" onclick="submitResetDemoDatabase()" class="btn-primary" style="padding:9px 20px; background:#dc2626; font-weight:700; border-radius:6px; cursor:pointer;">🧹 Confirm & Reset</button>
+                </div>
+            </div>
         </div>
     </div>
 

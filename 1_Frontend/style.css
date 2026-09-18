@@ -1601,6 +1601,18 @@ body > .skiptranslate:not(.navbar):not(.app-container) {
     color: #1d4ed8;
 }
 
+.user-status-pill.admin-pill {
+    background: #f8fafc;
+    border: 1.5px solid #64748b;
+    color: #0f172a;
+}
+
+.user-status-pill.owner-pill {
+    background: #f5f3ff;
+    border: 1.5px solid #c4b5fd;
+    color: #6d28d9;
+}
+
 .btn-logout-header {
     background: #ffffff;
     border: 1.5px solid #e2e8f0;
@@ -1747,6 +1759,16 @@ body > .skiptranslate:not(.navbar):not(.app-container) {
 
 #portalTabBuyer.active .portal-tab-title {
     color: #1d4ed8;
+}
+
+#portalTabAdmin.active {
+    border-color: #7c3aed;
+    background: #f5f3ff;
+    box-shadow: 0 8px 20px rgba(124, 58, 237, 0.15);
+}
+
+#portalTabAdmin.active .portal-tab-title {
+    color: #6d28d9;
 }
 
 .portal-form-container {
@@ -2319,4 +2341,80 @@ body > .skiptranslate:not(.navbar):not(.app-container) {
     .farmer-kpi-grid {
         grid-template-columns: 1fr;
     }
+}
+
+/* ==========================================================================
+   ADMIN AUTHORIZATION & MANAGEMENT STYLES
+   ========================================================================== */
+.badge-owner {
+    background: #f5f3ff;
+    color: #6d28d9;
+    border: 1px solid #ddd6fe;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 3px 8px;
+    border-radius: 6px;
+    display: inline-block;
+    letter-spacing: 0.5px;
+}
+
+.badge-admin {
+    background: #eff6ff;
+    color: #1d4ed8;
+    border: 1px solid #bfdbfe;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 3px 8px;
+    border-radius: 6px;
+    display: inline-block;
+    letter-spacing: 0.5px;
+}
+
+.badge-active {
+    background: #f0fdf4;
+    color: #15803d;
+    border: 1px solid #bbf7d0;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 6px;
+    display: inline-block;
+}
+
+.badge-disabled {
+    background: #fef2f2;
+    color: #b91c1c;
+    border: 1px solid #fecaca;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 6px;
+    display: inline-block;
+}
+
+.admin-action-btn {
+    padding: 4px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 6px;
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.admin-action-btn:hover {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+}
+
+.admin-action-btn.delete {
+    color: #dc2626;
+    border-color: #fca5a5;
+    background: #fff5f5;
+}
+
+.admin-action-btn.delete:hover {
+    background: #fee2e2;
+    border-color: #f87171;
 }

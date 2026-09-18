@@ -355,9 +355,12 @@ def restock_supplies(
 
 
 @router.get("/orders")
-def get_orders(db: Session = Depends(get_db)):
-    """Fetch all procurement orders with order items and status."""
-    orders = db.query(Order).order_by(Order.created_at.desc()).all()
+def get_orders(buyer_name: Optional[str] = Query(None), db: Session = Depends(get_db)):
+    """Fetch all procurement orders with order items and status, optionally filtered by buyer."""
+    query = db.query(Order)
+    if buyer_name and buyer_name.strip():
+        query = query.filter(Order.buyer_name.ilike(f"%{buyer_name.strip()}%"))
+    orders = query.order_by(Order.created_at.desc()).all()
     results = []
     for o in orders:
         product = db.query(Product).filter(Product.id == o.product_id).first()

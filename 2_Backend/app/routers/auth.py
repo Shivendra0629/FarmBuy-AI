@@ -5,10 +5,13 @@ from typing import List, Optional
 import random
 
 from ..database import get_db
-from ..models import Farmer, Buyer, Product, Supply, Order, OrderItem, Demand
+from ..models import Farmer, Buyer, Product, Supply, Order, OrderItem, Demand, Admin
 from ..schemas import (
     FarmerLoginRegisterRequest,
+    FarmerLoginRequest,
     BuyerLoginRegisterRequest,
+    BuyerLoginRequest,
+    AdminLoginRequest,
     FarmerAddSupplyRequest,
     FarmerUpdateSupplyRequest,
     FarmerClearStockRequest,
@@ -16,10 +19,16 @@ from ..schemas import (
     BuyerOut,
     FarmerOut
 )
+from ..security import (
+    verify_password,
+    create_access_token,
+    OWNER_ADMIN_ID,
+    OWNER_ADMIN_PASSWORD
+)
 
 router = APIRouter(
     prefix="/api/auth",
-    tags=["Farmer & Buyer Authentication"]
+    tags=["Farmer, Buyer & Admin Authentication"]
 )
 
 # Approximate central coordinates for Indian states / West Bengal hubs
@@ -57,24 +66,17 @@ def estimate_coordinates(state: str, pincode: str):
     return round(base_lat + lat_offset, 4), round(base_lon + lon_offset, 4)
 
 
-@router.post("/farmer", response_model=AuthResponse)
-def register_or_login_farmer(payload: FarmerLoginRegisterRequest, db: Session = Depends(get_db)):
-    """
-    Farmer registration and login:
-    Stores/updates farmer details (Name, Address, Phone Number, Pincode, State)
-    and registers their commodities with Quantity (kg) and Price per kg in the database.
-    """
+def _register_farmer_record(payload: FarmerLoginRegisterRequest, db: Session):
     clean_phone = payload.phone_number.strip()
     clean_name = payload.name.strip()
-    clean_commodity = payload.commodity.strip()
-    clean_address = payload.address.strip()
-    clean_state = payload.state.strip()
-    clean_pincode = payload.pincode.strip()
+    clean_commodity = (payload.commodity or "").strip()
+    clean_address = (payload.address or "").strip()
+    clean_state = (payload.state or "West Bengal").strip()
+    clean_pincode = (payload.pincode or "").strip()
 
     if not clean_phone or not clean_name:
         raise HTTPException(status_code=400, detail="Name and Phone Number are required.")
 
-    # 1. Check if farmer already exists by phone number or name
     farmer = db.query(Farmer).filter(
         (Farmer.contact == clean_phone) | (Farmer.name == clean_name)
     ).first()
@@ -82,7 +84,6 @@ def register_or_login_farmer(payload: FarmerLoginRegisterRequest, db: Session = 
     lat, lon = estimate_coordinates(clean_state, clean_pincode)
 
     if not farmer:
-        # Create new Farmer
         farmer = Farmer(
             name=clean_name,
             address=clean_address,
@@ -99,91 +100,177 @@ def register_or_login_farmer(payload: FarmerLoginRegisterRequest, db: Session = 
         db.commit()
         db.refresh(farmer)
     else:
-        # Update existing farmer info
         farmer.address = clean_address
         farmer.pincode = clean_pincode
         farmer.state = clean_state
         farmer.location = f"{clean_address}, {clean_state} ({clean_pincode})"
         farmer.latitude = lat
         farmer.longitude = lon
+        farmer.contact = clean_phone
         db.commit()
         db.refresh(farmer)
 
-    # 2. Check or Create Product / Commodity
-    product = db.query(Product).filter(Product.name.ilike(clean_commodity)).first()
-    if not product:
-        # Create new product record for this commodity
-        product = Product(
-            name=clean_commodity.capitalize(),
-            category="Agricultural Produce",
-            unit="kg",
-            mandi_benchmark_price=round(payload.price_per_kg * 1.05, 1),
-            perishability_days=14
-        )
-        db.add(product)
-        db.commit()
-        db.refresh(product)
+    product = None
+    if clean_commodity:
+        product = db.query(Product).filter(Product.name.ilike(clean_commodity)).first()
+        if not product:
+            product = Product(
+                name=clean_commodity.capitalize(),
+                category="Agricultural Produce",
+                unit="kg",
+                mandi_benchmark_price=round(float(payload.price_per_kg or 20.0) * 1.05, 1),
+                perishability_days=14
+            )
+            db.add(product)
+            db.commit()
+            db.refresh(product)
 
-    # 3. Add or Update Farmer's Supply for this Commodity
-    existing_supply = db.query(Supply).filter(
-        Supply.farmer_id == farmer.id,
-        Supply.product_id == product.id
-    ).first()
+        existing_supply = db.query(Supply).filter(
+            Supply.farmer_id == farmer.id,
+            Supply.product_id == product.id
+        ).first()
 
-    today = date.today()
-    if existing_supply:
-        existing_supply.quantity += payload.quantity_kg
-        if existing_supply.initial_quantity is None:
-            existing_supply.initial_quantity = existing_supply.quantity
+        today = date.today()
+        qty = float(payload.quantity_kg or 1000)
+        price = float(payload.price_per_kg or 20)
+        if existing_supply:
+            existing_supply.quantity += qty
+            if existing_supply.initial_quantity is None:
+                existing_supply.initial_quantity = existing_supply.quantity
+            else:
+                existing_supply.initial_quantity += qty
+            existing_supply.expected_price = price
+            existing_supply.available_date = today
         else:
-            existing_supply.initial_quantity += payload.quantity_kg
-        existing_supply.expected_price = payload.price_per_kg
-        existing_supply.available_date = today
-    else:
-        new_supply = Supply(
-            farmer_id=farmer.id,
-            product_id=product.id,
-            quantity=payload.quantity_kg,
-            cleared_quantity=0.0,
-            initial_quantity=payload.quantity_kg,
-            expected_price=payload.price_per_kg,
-            quality_grade="Grade A",
-            available_date=today,
-            harvest_date=today
-        )
-        db.add(new_supply)
+            new_supply = Supply(
+                farmer_id=farmer.id,
+                product_id=product.id,
+                quantity=qty,
+                cleared_quantity=0.0,
+                initial_quantity=qty,
+                expected_price=price,
+                quality_grade="Grade A",
+                available_date=today,
+                harvest_date=today
+            )
+            db.add(new_supply)
 
-    db.commit()
+        db.commit()
 
+    token = create_access_token({
+        "sub": str(farmer.id),
+        "user_id": farmer.id,
+        "role": "FARMER",
+        "name": farmer.name,
+        "phone": farmer.contact
+    })
+
+    return farmer, product, token
+
+
+@router.post("/farmer/register", response_model=AuthResponse)
+def register_farmer(payload: FarmerLoginRegisterRequest, db: Session = Depends(get_db)):
+    """
+    Farmer registration:
+    Saves the farmer's complete registration details in the database and generates a unique farmer ID.
+    Shows confirmation: 'Registration successful. You can now login.'
+    """
+    farmer, product, token = _register_farmer_record(payload, db)
     return {
         "status": "success",
         "user_type": "farmer",
+        "role": "FARMER",
         "user_id": farmer.id,
         "name": farmer.name,
         "phone_number": farmer.contact,
-        "address": clean_address,
-        "pincode": clean_pincode,
-        "state": clean_state,
-        "message": f"Welcome, Farmer {farmer.name}! Your produce ({product.name}: {payload.quantity_kg:,.0f} kg @ ₹{payload.price_per_kg}/kg) is successfully registered in the platform database.",
+        "address": farmer.address or "",
+        "pincode": farmer.pincode or "",
+        "state": farmer.state or "",
+        "access_token": token,
+        "message": "Registration successful. You can now login.",
         "details": {
             "farmer_id": farmer.id,
-            "product_id": product.id,
-            "product_name": product.name,
-            "quantity_kg": payload.quantity_kg,
-            "price_per_kg": payload.price_per_kg,
-            "mandi_benchmark": product.mandi_benchmark_price,
+            "product_id": product.id if product else None,
+            "product_name": product.name if product else None,
             "location": farmer.location
         }
     }
 
 
-@router.post("/buyer", response_model=AuthResponse)
-def register_or_login_buyer(payload: BuyerLoginRegisterRequest, db: Session = Depends(get_db)):
+@router.post("/farmer/login", response_model=AuthResponse)
+def login_farmer(payload: FarmerLoginRequest, db: Session = Depends(get_db)):
     """
-    Buyer registration and login:
-    Stores buyer details (Name, Address, Phone Number, Pincode, State) in the database
-    and authorizes access to the full crop intelligence, demand forecasts, and farm matching.
+    Farmer login:
+    Verifies name and phone number against the database.
+    Loads that specific farmer's session, profile, and data.
     """
+    clean_name = payload.name.strip()
+    clean_phone = payload.phone_number.strip()
+
+    farmer = db.query(Farmer).filter(
+        Farmer.name.ilike(clean_name),
+        Farmer.contact == clean_phone
+    ).first()
+
+    if not farmer:
+        raise HTTPException(
+            status_code=401,
+            detail="Farmer not found. Please check your name and phone number or register first."
+        )
+
+    token = create_access_token({
+        "sub": str(farmer.id),
+        "user_id": farmer.id,
+        "role": "FARMER",
+        "name": farmer.name,
+        "phone": farmer.contact
+    })
+
+    return {
+        "status": "success",
+        "user_type": "farmer",
+        "role": "FARMER",
+        "user_id": farmer.id,
+        "name": farmer.name,
+        "phone_number": farmer.contact,
+        "address": farmer.address or "",
+        "pincode": farmer.pincode or "",
+        "state": farmer.state or "",
+        "access_token": token,
+        "message": f"Welcome back, Farmer {farmer.name}! Login successful.",
+        "details": {
+            "farmer_id": farmer.id,
+            "location": farmer.location
+        }
+    }
+
+
+@router.post("/farmer", response_model=AuthResponse)
+def register_or_login_farmer(payload: FarmerLoginRegisterRequest, db: Session = Depends(get_db)):
+    """Legacy unified farmer registration/login route maintained for compatibility."""
+    farmer, product, token = _register_farmer_record(payload, db)
+    return {
+        "status": "success",
+        "user_type": "farmer",
+        "role": "FARMER",
+        "user_id": farmer.id,
+        "name": farmer.name,
+        "phone_number": farmer.contact,
+        "address": farmer.address or "",
+        "pincode": farmer.pincode or "",
+        "state": farmer.state or "",
+        "access_token": token,
+        "message": f"Welcome, Farmer {farmer.name}! Produce registered successfully.",
+        "details": {
+            "farmer_id": farmer.id,
+            "product_id": product.id if product else None,
+            "product_name": product.name if product else None,
+            "location": farmer.location
+        }
+    }
+
+
+def _register_buyer_record(payload: BuyerLoginRegisterRequest, db: Session):
     clean_phone = payload.phone_number.strip()
     clean_name = payload.name.strip()
     clean_address = payload.address.strip()
@@ -194,7 +281,6 @@ def register_or_login_buyer(payload: BuyerLoginRegisterRequest, db: Session = De
     if not clean_phone or not clean_name:
         raise HTTPException(status_code=400, detail="Name and Phone Number are required.")
 
-    # Find or create Buyer
     buyer = db.query(Buyer).filter(
         (Buyer.phone_number == clean_phone) | (Buyer.name == clean_name)
     ).first()
@@ -212,34 +298,184 @@ def register_or_login_buyer(payload: BuyerLoginRegisterRequest, db: Session = De
         db.commit()
         db.refresh(buyer)
     else:
-        # Update buyer info
         buyer.address = clean_address
         buyer.city = clean_city
         buyer.pincode = clean_pincode
         buyer.state = clean_state
+        buyer.phone_number = clean_phone
         db.commit()
         db.refresh(buyer)
 
-    full_loc = f"{buyer.address}"
-    if buyer.city:
-        full_loc += f", {buyer.city}"
-    full_loc += f", {buyer.state} ({buyer.pincode})"
+    token = create_access_token({
+        "sub": str(buyer.id),
+        "user_id": buyer.id,
+        "role": "BUYER",
+        "name": buyer.name,
+        "phone": buyer.phone_number
+    })
 
+    return buyer, token
+
+
+@router.post("/buyer/register", response_model=AuthResponse)
+def register_buyer(payload: BuyerLoginRegisterRequest, db: Session = Depends(get_db)):
+    """
+    Buyer registration:
+    Saves buyer details permanently in the database and generates a unique buyer ID.
+    Shows confirmation: 'Registration successful. You can now login.'
+    """
+    buyer, token = _register_buyer_record(payload, db)
     return {
         "status": "success",
         "user_type": "buyer",
+        "role": "BUYER",
         "user_id": buyer.id,
         "name": buyer.name,
         "phone_number": buyer.phone_number,
         "address": buyer.address,
         "pincode": buyer.pincode,
         "state": buyer.state,
-        "message": f"Welcome, {buyer.name}! Access granted to live agricultural crop supplies, predictive demand intelligence, and optimized farm collection routes.",
+        "access_token": token,
+        "message": "Registration successful. You can now login.",
         "details": {
             "buyer_id": buyer.id,
-            "city": buyer.city,
-            "hub_location": full_loc
+            "city": buyer.city
         }
+    }
+
+
+@router.post("/buyer/login", response_model=AuthResponse)
+def login_buyer(payload: BuyerLoginRequest, db: Session = Depends(get_db)):
+    """
+    Buyer login:
+    Verifies name and phone number against the database.
+    Loads buyer-specific information and orders.
+    """
+    clean_name = payload.name.strip()
+    clean_phone = payload.phone_number.strip()
+
+    buyer = db.query(Buyer).filter(
+        Buyer.name.ilike(clean_name),
+        Buyer.phone_number == clean_phone
+    ).first()
+
+    if not buyer:
+        raise HTTPException(
+            status_code=401,
+            detail="Buyer not found. Please check your name and phone number or register first."
+        )
+
+    token = create_access_token({
+        "sub": str(buyer.id),
+        "user_id": buyer.id,
+        "role": "BUYER",
+        "name": buyer.name,
+        "phone": buyer.phone_number
+    })
+
+    return {
+        "status": "success",
+        "user_type": "buyer",
+        "role": "BUYER",
+        "user_id": buyer.id,
+        "name": buyer.name,
+        "phone_number": buyer.phone_number,
+        "address": buyer.address,
+        "pincode": buyer.pincode,
+        "state": buyer.state,
+        "access_token": token,
+        "message": f"Welcome back, {buyer.name}! Login successful.",
+        "details": {
+            "buyer_id": buyer.id,
+            "city": buyer.city
+        }
+    }
+
+
+@router.post("/buyer", response_model=AuthResponse)
+def register_or_login_buyer(payload: BuyerLoginRegisterRequest, db: Session = Depends(get_db)):
+    """Legacy buyer registration/login endpoint maintained for backward compatibility."""
+    buyer, token = _register_buyer_record(payload, db)
+    return {
+        "status": "success",
+        "user_type": "buyer",
+        "role": "BUYER",
+        "user_id": buyer.id,
+        "name": buyer.name,
+        "phone_number": buyer.phone_number,
+        "address": buyer.address,
+        "pincode": buyer.pincode,
+        "state": buyer.state,
+        "access_token": token,
+        "message": f"Welcome, {buyer.name}! Access granted.",
+        "details": {
+            "buyer_id": buyer.id,
+            "city": buyer.city
+        }
+    }
+
+
+@router.post("/admin/login", response_model=AuthResponse)
+def login_admin(payload: AdminLoginRequest, db: Session = Depends(get_db)):
+    """
+    Admin & Owner login:
+    Verifies Admin User ID and Password.
+    If credentials match server OWNER configuration -> Authenticated as OWNER.
+    Else checks regular Admin accounts in the database -> Authenticated as ADMIN.
+    """
+    user_id_input = payload.admin_user_id.strip()
+    password_input = payload.password.strip()
+
+    if not user_id_input or not password_input:
+        raise HTTPException(status_code=400, detail="Admin User ID and Password are required.")
+
+    # 1. Check Owner / Super Admin Credentials (Configured via Server Environment Variables)
+    if user_id_input == OWNER_ADMIN_ID and password_input == OWNER_ADMIN_PASSWORD:
+        token = create_access_token({
+            "sub": "owner",
+            "user_id": OWNER_ADMIN_ID,
+            "role": "OWNER",
+            "name": "Owner / Super Admin"
+        })
+        return {
+            "status": "success",
+            "user_type": "owner",
+            "role": "OWNER",
+            "user_id": OWNER_ADMIN_ID,
+            "name": "Owner / Super Admin",
+            "access_token": token,
+            "message": "Super Admin authenticated successfully. Welcome to the Owner Dashboard."
+        }
+
+    # 2. Check Regular Team Admin Accounts in the Database
+    admin = db.query(Admin).filter(Admin.admin_user_id == user_id_input).first()
+    if not admin or not verify_password(password_input, admin.password_hash):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid Admin ID or password."
+        )
+
+    if admin.is_active != 1:
+        raise HTTPException(
+            status_code=403,
+            detail="This Admin account has been disabled. Please contact the Owner."
+        )
+
+    token = create_access_token({
+        "sub": str(admin.id),
+        "user_id": admin.admin_user_id,
+        "role": "ADMIN",
+        "name": admin.name
+    })
+
+    return {
+        "status": "success",
+        "user_type": "admin",
+        "role": "ADMIN",
+        "user_id": admin.admin_user_id,
+        "name": admin.name,
+        "access_token": token,
+        "message": f"Welcome back, Admin {admin.name}! Login successful."
     }
 
 

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from datetime import date, datetime
 
 
@@ -70,6 +70,11 @@ class FarmerLoginRegisterRequest(BaseModel):
     state: str = Field("West Bengal", min_length=2, description="State name")
 
 
+class FarmerLoginRequest(BaseModel):
+    name: str = Field(..., min_length=2, description="Farmer registered full name")
+    phone_number: str = Field(..., min_length=6, description="Registered phone number")
+
+
 class BuyerLoginRegisterRequest(BaseModel):
     name: str = Field(..., min_length=2, description="Buyer or company name")
     address: str = Field(..., min_length=2, description="Delivery or warehouse address")
@@ -77,6 +82,52 @@ class BuyerLoginRegisterRequest(BaseModel):
     phone_number: str = Field(..., min_length=6, description="Contact phone number")
     pincode: str = Field(..., min_length=4, description="Area postal pincode")
     state: str = Field("West Bengal", min_length=2, description="State name")
+
+
+class BuyerLoginRequest(BaseModel):
+    name: str = Field(..., min_length=2, description="Buyer or enterprise registered name")
+    phone_number: str = Field(..., min_length=6, description="Registered contact phone number")
+
+
+class AdminLoginRequest(BaseModel):
+    admin_user_id: str = Field(..., min_length=2, description="Admin user identifier")
+    password: str = Field(..., min_length=1, description="Admin password")
+
+
+class AdminCreateRequest(BaseModel):
+    name: str = Field(..., min_length=2, description="Admin full name or team label")
+    admin_user_id: str = Field(..., min_length=3, max_length=50, description="Unique admin user ID")
+    password: str = Field(..., min_length=4, description="Initial admin password")
+
+
+class AdminUpdateIdRequest(BaseModel):
+    admin_user_id: Optional[str] = None
+    new_admin_user_id: Optional[str] = None
+
+
+class AdminUpdatePasswordRequest(BaseModel):
+    new_password: Optional[str] = None
+    password: Optional[str] = None
+
+
+class AdminStatusRequest(BaseModel):
+    is_active: Union[int, bool] = Field(..., description="Active flag: 1/0 or true/false")
+
+
+class AdminOut(BaseModel):
+    id: int
+    name: str
+    admin_user_id: str
+    role: str
+    is_active: int
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class DemoResetRequest(BaseModel):
+    confirm: bool = Field(..., description="Confirmation flag to proceed with demo data reset")
 
 
 class FarmerAddSupplyRequest(BaseModel):
@@ -107,13 +158,15 @@ class FarmerClearStockRequest(BaseModel):
 
 class AuthResponse(BaseModel):
     status: str
-    user_type: str  # "farmer" or "buyer"
-    user_id: int
+    user_type: str  # "farmer", "buyer", "admin", "owner"
+    user_id: Any
     name: str
     phone_number: Optional[str] = None
-    address: str
-    pincode: str
-    state: str
+    address: Optional[str] = ""
+    pincode: Optional[str] = ""
+    state: Optional[str] = ""
+    role: Optional[str] = None
+    access_token: Optional[str] = None
     message: str
     details: Optional[Dict[str, Any]] = None
 

@@ -130,3 +130,15 @@ class OrderItem(Base):
 
     order = relationship("Order", back_populates="items")
     farmer = relationship("Farmer")
+
+
+class Admin(Base):
+    __tablename__ = "admins"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    admin_user_id = Column(String, unique=True, nullable=False, index=True)
+    password_hash = Column(String, nullable=False)
+    role = Column(String, default="ADMIN")  # ADMIN
+    is_active = Column(Integer, default=1)  # 1: Active, 0: Disabled
+    created_at = Column(DateTime, default=datetime.now)

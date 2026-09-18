@@ -7,10 +7,58 @@ import time
 from typing import Optional, Dict, Any
 from fastapi import HTTPException, Header, Depends, status
 
-# Configuration from Environment Variables (compatible with Render & local dev)
-OWNER_ADMIN_ID = os.getenv("OWNER_ADMIN_ID", "owner")
-OWNER_ADMIN_PASSWORD = os.getenv("OWNER_ADMIN_PASSWORD", "owner123")
+# Configuration from Environment Variables or persisted owner config
+OWNER_CONFIG_FILE = os.path.join(os.path.dirname(__file__), "owner_config.json")
+
+def get_owner_credentials() -> Dict[str, str]:
+    default_id = os.getenv("OWNER_ADMIN_ID", "Sm_0629")
+    default_pwd = os.getenv("OWNER_ADMIN_PASSWORD", "9973868328")
+    if os.path.exists(OWNER_CONFIG_FILE):
+        try:
+            with open(OWNER_CONFIG_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return {
+                    "admin_user_id": data.get("admin_user_id", default_id),
+                    "password_hash": data.get("password_hash"),
+                    "password_plain": data.get("password_plain", default_pwd)
+                }
+        except Exception:
+            pass
+    return {
+        "admin_user_id": default_id,
+        "password_hash": None,
+        "password_plain": default_pwd
+    }
+
+def get_owner_admin_id() -> str:
+    return get_owner_credentials()["admin_user_id"]
+
+OWNER_ADMIN_ID = get_owner_admin_id()
+OWNER_ADMIN_PASSWORD = os.getenv("OWNER_ADMIN_PASSWORD", "9973868328")
 SECRET_KEY = os.getenv("SECRET_KEY", "farmbuy_ai_secure_token_secret_key_2026_x89f")
+
+def save_owner_credentials(new_admin_id: Optional[str] = None, new_password: Optional[str] = None) -> Dict[str, str]:
+    global OWNER_ADMIN_ID, OWNER_ADMIN_PASSWORD
+    creds = get_owner_credentials()
+    if new_admin_id:
+        creds["admin_user_id"] = new_admin_id.strip()
+        OWNER_ADMIN_ID = creds["admin_user_id"]
+    if new_password:
+        creds["password_plain"] = new_password.strip()
+        creds["password_hash"] = hash_password(new_password.strip())
+        OWNER_ADMIN_PASSWORD = creds["password_plain"]
+    
+    with open(OWNER_CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(creds, f, indent=2)
+    return creds
+
+def verify_owner_login(user_id_input: str, password_input: str) -> bool:
+    creds = get_owner_credentials()
+    if user_id_input.strip() != creds["admin_user_id"]:
+        return False
+    if creds.get("password_hash"):
+        return verify_password(password_input, creds["password_hash"])
+    return password_input == creds.get("password_plain")
 
 TOKEN_EXPIRY_SECONDS = 86400 * 7  # 7 days session validity
 PBKDF2_ITERATIONS = 200_000

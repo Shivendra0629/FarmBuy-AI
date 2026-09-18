@@ -35,6 +35,7 @@ class FarmerOut(FarmerBase):
     id: int
     address: Optional[str] = None
     pincode: Optional[str] = None
+    phone_number: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -112,6 +113,11 @@ class AdminUpdatePasswordRequest(BaseModel):
 
 class AdminStatusRequest(BaseModel):
     is_active: Union[int, bool] = Field(..., description="Active flag: 1/0 or true/false")
+
+
+class OwnerUpdateCredentialsRequest(BaseModel):
+    new_admin_user_id: Optional[str] = Field(None, min_length=3, max_length=50, description="New Super Admin User ID")
+    new_password: Optional[str] = Field(None, min_length=4, description="New Super Admin Password")
 
 
 class AdminOut(BaseModel):

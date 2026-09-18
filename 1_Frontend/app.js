@@ -729,7 +729,7 @@ async function loadAdminOverview() {
 async function loadAdminFarmers() {
     const tbody = document.getElementById("adminFarmersTableBody");
     if (!tbody) return;
-    tbody.innerHTML = `<tr><td colspan="7" class="text-muted text-center py-3">Loading farmers directory...</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="text-muted text-center py-3">Loading farmers directory...</td></tr>`;
 
     try {
         const res = await authFetch(`${API_BASE}/api/admin/farmers`);
@@ -737,24 +737,26 @@ async function loadAdminFarmers() {
         const farmers = await res.json();
 
         if (!farmers || farmers.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="7" class="text-muted text-center py-3">No farmers registered yet.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="6" class="text-muted text-center py-3">No farmers registered yet.</td></tr>`;
             return;
         }
 
-        tbody.innerHTML = farmers.map(f => `
-            <tr>
-                <td><strong>#${f.id}</strong></td>
-                <td style="font-weight:700; color:#1e293b;">${escapeHtml(f.name)}</td>
-                <td>📞 ${escapeHtml(f.phone_number)}</td>
-                <td>${escapeHtml(f.address || "Farm Gate")}</td>
-                <td>${escapeHtml(f.state || "N/A")}</td>
-                <td><code>${escapeHtml(f.pincode || "N/A")}</code></td>
-                <td style="font-size:12px; color:#64748b;">${f.created_at ? new Date(f.created_at).toLocaleDateString() : "Seed Baseline"}</td>
-            </tr>
-        `).join("");
+        tbody.innerHTML = farmers.map(f => {
+            const phone = f.phone_number || f.contact || "N/A";
+            return `
+                <tr>
+                    <td><strong>#${f.id}</strong></td>
+                    <td style="font-weight:700; color:#1e293b;">${escapeHtml(f.name)}</td>
+                    <td>📞 ${escapeHtml(phone)}</td>
+                    <td>${escapeHtml(f.address || f.location || "Farm Gate")}</td>
+                    <td>${escapeHtml(f.state || "N/A")}</td>
+                    <td><code>${escapeHtml(f.pincode || "N/A")}</code></td>
+                </tr>
+            `;
+        }).join("");
     } catch (err) {
         console.error("Farmers load error:", err);
-        tbody.innerHTML = `<tr><td colspan="7" class="text-danger text-center py-3">Error loading farmers: ${err.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="text-danger text-center py-3">Error loading farmers: ${err.message}</td></tr>`;
     }
 }
 
@@ -778,12 +780,12 @@ async function loadAdminBuyers() {
             <tr>
                 <td><strong>#${b.id}</strong></td>
                 <td style="font-weight:700; color:#1e293b;">${escapeHtml(b.name)}</td>
-                <td>📞 ${escapeHtml(b.phone_number)}</td>
+                <td>📞 ${escapeHtml(b.phone_number || "N/A")}</td>
                 <td>${escapeHtml(b.address || "Central Depot")}</td>
                 <td>${escapeHtml(b.city || "N/A")}</td>
                 <td>${escapeHtml(b.state || "N/A")}</td>
                 <td><code>${escapeHtml(b.pincode || "N/A")}</code></td>
-                <td style="font-size:12px; color:#64748b;">${b.created_at ? new Date(b.created_at).toLocaleDateString() : "Seed Baseline"}</td>
+                <td style="font-size:12px; color:#64748b;">${b.created_at ? new Date(b.created_at).toLocaleDateString() : "—"}</td>
             </tr>
         `).join("");
     } catch (err) {
@@ -808,18 +810,23 @@ async function loadAdminSupplies() {
             return;
         }
 
-        tbody.innerHTML = supplies.map(s => `
-            <tr>
-                <td><strong>#${s.id}</strong></td>
-                <td><code>F-${s.farmer_id}</code></td>
-                <td style="font-weight:600; color:#1e293b;">${escapeHtml(s.farmer_name || `Farmer #${s.farmer_id}`)}</td>
-                <td><strong>${escapeHtml(s.commodity)}</strong></td>
-                <td><span style="font-weight:700; color:#15803d;">${Number(s.quantity_kg).toLocaleString()} kg</span></td>
-                <td>₹ ${Number(s.price_per_kg).toFixed(2)} / kg</td>
-                <td><span class="badge" style="background:#f1f5f9; color:#475569; font-size:11px;">${escapeHtml(s.quality_grade || "Grade A")}</span></td>
-                <td style="font-size:12px; color:#64748b;">${escapeHtml(s.available_date || "Today")}</td>
-            </tr>
-        `).join("");
+        tbody.innerHTML = supplies.map(s => {
+            const comm = s.commodity || s.product_name || "Produce";
+            const qty = Number(s.quantity_kg ?? s.quantity_left_kg ?? 0);
+            const price = Number(s.price_per_kg ?? s.expected_price ?? 0);
+            return `
+                <tr>
+                    <td><strong>#${s.id}</strong></td>
+                    <td><code>F-${s.farmer_id}</code></td>
+                    <td style="font-weight:600; color:#1e293b;">${escapeHtml(s.farmer_name || `Farmer #${s.farmer_id}`)}</td>
+                    <td><strong>${escapeHtml(comm)}</strong></td>
+                    <td><span style="font-weight:700; color:#15803d;">${qty.toLocaleString()} kg</span></td>
+                    <td>₹ ${price.toFixed(2)} / kg</td>
+                    <td><span class="badge" style="background:#f1f5f9; color:#475569; font-size:11px;">${escapeHtml(s.quality_grade || "Grade A")}</span></td>
+                    <td style="font-size:12px; color:#64748b;">${escapeHtml(s.available_date || "Today")}</td>
+                </tr>
+            `;
+        }).join("");
     } catch (err) {
         console.error("Supplies load error:", err);
         tbody.innerHTML = `<tr><td colspan="8" class="text-danger text-center py-3">Error loading supplies: ${err.message}</td></tr>`;
@@ -842,22 +849,31 @@ async function loadAdminOrders() {
             return;
         }
 
-        tbody.innerHTML = orders.map(o => `
-            <tr>
-                <td><strong>${escapeHtml(o.order_code || `#${o.id}`)}</strong></td>
-                <td style="font-size:12px; color:#64748b;">${o.created_at ? new Date(o.created_at).toLocaleString() : "N/A"}</td>
-                <td style="font-weight:700; color:#1e293b;">${escapeHtml(o.buyer_name || "Buyer")}</td>
-                <td><strong>${escapeHtml(o.commodity || "N/A")}</strong></td>
-                <td>${Number(o.total_quantity_kg).toLocaleString()} kg</td>
-                <td style="font-weight:700; color:#15803d;">₹ ${Number(o.total_cost).toLocaleString()}</td>
-                <td>${o.total_distance_km ? `${Number(o.total_distance_km).toFixed(1)} km TSP Route` : "Direct Hub"}</td>
-                <td>
-                    <span class="badge ${o.status === 'CANCELLED' ? 'badge-danger' : 'badge-success'}" style="font-size:11px;">
-                        ${escapeHtml(o.status || "CONFIRMED")}
-                    </span>
-                </td>
-            </tr>
-        `).join("");
+        tbody.innerHTML = orders.map(o => {
+            const orderCode = o.order_code || o.order_number || `#${o.id}`;
+            const commodity = o.commodity || o.product_name || "Produce";
+            const qty = Number(o.total_quantity_kg ?? o.total_quantity ?? 0);
+            const totalCost = Number(o.total_cost ?? o.total_procurement_cost ?? o.grand_total ?? 0);
+            const distance = Number(o.total_distance_km ?? o.estimated_distance_km ?? 0);
+            const timeStr = o.created_at || "N/A";
+
+            return `
+                <tr>
+                    <td><strong>${escapeHtml(orderCode)}</strong></td>
+                    <td style="font-size:12px; color:#64748b;">${escapeHtml(timeStr)}</td>
+                    <td style="font-weight:700; color:#1e293b;">${escapeHtml(o.buyer_name || "Buyer")}</td>
+                    <td><strong>${escapeHtml(commodity)}</strong></td>
+                    <td>${qty.toLocaleString()} kg</td>
+                    <td style="font-weight:700; color:#15803d;">₹ ${totalCost.toLocaleString()}</td>
+                    <td>${distance > 0 ? `${distance.toFixed(1)} km TSP Route` : "Direct Hub"}</td>
+                    <td>
+                        <span class="badge ${o.status === 'CANCELLED' ? 'badge-danger' : 'badge-success'}" style="font-size:11px;">
+                            ${escapeHtml(o.status || "CONFIRMED")}
+                        </span>
+                    </td>
+                </tr>
+            `;
+        }).join("");
     } catch (err) {
         console.error("Orders load error:", err);
         tbody.innerHTML = `<tr><td colspan="8" class="text-danger text-center py-3">Error loading orders: ${err.message}</td></tr>`;
@@ -894,7 +910,7 @@ async function loadAdminAccounts() {
                 : `<span class="badge-disabled">○ Disabled</span>`;
 
             const actions = isOwner
-                ? `<span style="font-size:12px; color:#64748b; font-style:italic;">Protected Super Admin</span>`
+                ? `<button type="button" class="admin-action-btn" style="background:#5b21b6; color:white; border-color:#4c1d95;" onclick="openSuperAdminCredsModal()" title="Change Super Admin Credentials">👑 Change Creds</button>`
                 : `
                     <div style="display:flex; gap:6px; justify-content:center; flex-wrap:wrap;">
                         <button type="button" class="admin-action-btn" onclick="openChangeAdminIdModal(${a.id}, '${escapeHtml(a.admin_user_id)}', '${escapeHtml(a.name)}')" title="Change User ID">✏️ Change ID</button>
@@ -1133,7 +1149,7 @@ async function submitResetDemoDatabase() {
         if (!res.ok) throw new Error(data.detail || "Failed to reset demo database.");
 
         closeResetDemoModal();
-        showToast("🧹 Demo database successfully reset to seed state!", "success");
+        showToast("🧹 All platform data wiped! Database is clean with 0 synthetic users.", "success");
 
         // Reload products and refresh admin data
         await loadProducts();
@@ -1145,6 +1161,88 @@ async function submitResetDemoDatabase() {
         if (btn) {
             btn.disabled = false;
             btn.innerHTML = originalText;
+        }
+    }
+}
+
+// 12b. Super Admin: Change Super Admin Credentials
+function openSuperAdminCredsModal() {
+    const modal = document.getElementById("superAdminChangeCredsModal");
+    const idInput = document.getElementById("superAdminNewUserIdInput");
+    const pwdInput = document.getElementById("superAdminNewPasswordInput");
+    const confInput = document.getElementById("superAdminConfirmPasswordInput");
+
+    if (idInput) {
+        idInput.value = state.currentUser ? (state.currentUser.user_id || "Sm_0629") : "Sm_0629";
+    }
+    if (pwdInput) pwdInput.value = "";
+    if (confInput) confInput.value = "";
+    if (modal) modal.style.display = "flex";
+}
+
+function closeSuperAdminCredsModal() {
+    const modal = document.getElementById("superAdminChangeCredsModal");
+    if (modal) modal.style.display = "none";
+}
+
+async function submitSuperAdminCreds(event) {
+    if (event) event.preventDefault();
+    const newId = document.getElementById("superAdminNewUserIdInput").value.trim();
+    const newPwd = document.getElementById("superAdminNewPasswordInput").value;
+    const confPwd = document.getElementById("superAdminConfirmPasswordInput").value;
+
+    if (!newId && !newPwd) {
+        showToast("Please enter a new User ID or Password.", "warning");
+        return;
+    }
+
+    if (newPwd && newPwd.length < 4) {
+        showToast("Password must be at least 4 characters long.", "warning");
+        return;
+    }
+
+    if (newPwd && newPwd !== confPwd) {
+        showToast("Passwords do not match!", "error");
+        return;
+    }
+
+    const saveBtn = document.getElementById("saveSuperAdminCredsBtn");
+    const origText = saveBtn ? saveBtn.innerHTML : "💾 Save Credentials";
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = `<span>⏳ Saving...</span>`;
+    }
+
+    try {
+        const payload = {};
+        if (newId) payload.new_admin_user_id = newId;
+        if (newPwd) payload.new_password = newPwd;
+
+        const res = await authFetch(`${API_BASE}/api/admin/manage/owner/credentials`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Failed to update Super Admin credentials.");
+
+        if (state.currentUser && newId) {
+            state.currentUser.user_id = newId;
+            localStorage.setItem("farmbuy_user", JSON.stringify(state.currentUser));
+            const adminUserIdDisplay = document.getElementById("adminUserBadgeId");
+            if (adminUserIdDisplay) adminUserIdDisplay.textContent = `ID: ${newId}`;
+        }
+
+        closeSuperAdminCredsModal();
+        showToast("👑 Super Admin credentials successfully updated!", "success");
+        loadAdminAccounts();
+    } catch (err) {
+        console.error("Super admin update error:", err);
+        showToast(`⚠️ ${err.message}`, "error");
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = origText;
         }
     }
 }

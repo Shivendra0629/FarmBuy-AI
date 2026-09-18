@@ -23,7 +23,9 @@ from ..security import (
     verify_password,
     create_access_token,
     OWNER_ADMIN_ID,
-    OWNER_ADMIN_PASSWORD
+    OWNER_ADMIN_PASSWORD,
+    verify_owner_login,
+    get_owner_admin_id
 )
 
 router = APIRouter(
@@ -429,54 +431,72 @@ def login_admin(payload: AdminLoginRequest, db: Session = Depends(get_db)):
     if not user_id_input or not password_input:
         raise HTTPException(status_code=400, detail="Admin User ID and Password are required.")
 
-    # 1. Check Owner / Super Admin Credentials (Configured via Server Environment Variables)
-    if user_id_input == OWNER_ADMIN_ID and password_input == OWNER_ADMIN_PASSWORD:
+    # 1. Check Owner / Super Admin Credentials (via security helper)
+    if verify_owner_login(user_id_input, password_input):
+        owner_id = get_owner_admin_id()
         token = create_access_token({
             "sub": "owner",
-            "user_id": OWNER_ADMIN_ID,
+            "user_id": owner_id,
             "role": "OWNER",
-            "name": "Owner / Super Admin"
+            "name": "Super Admin"
         })
         return {
             "status": "success",
             "user_type": "owner",
             "role": "OWNER",
-            "user_id": OWNER_ADMIN_ID,
-            "name": "Owner / Super Admin",
+            "user_id": owner_id,
+            "name": "Super Admin",
             "access_token": token,
             "message": "Super Admin authenticated successfully. Welcome to the Owner Dashboard."
         }
 
-    # 2. Check Regular Team Admin Accounts in the Database
+    # 2. Check Database Admin Accounts (Both OWNER and regular ADMIN)
     admin = db.query(Admin).filter(Admin.admin_user_id == user_id_input).first()
-    if not admin or not verify_password(password_input, admin.password_hash):
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid Admin ID or password."
-        )
+    if admin and verify_password(password_input, admin.password_hash):
+        if admin.role == "OWNER":
+            token = create_access_token({
+                "sub": "owner",
+                "user_id": admin.admin_user_id,
+                "role": "OWNER",
+                "name": admin.name or "Super Admin"
+            })
+            return {
+                "status": "success",
+                "user_type": "owner",
+                "role": "OWNER",
+                "user_id": admin.admin_user_id,
+                "name": admin.name or "Super Admin",
+                "access_token": token,
+                "message": "Super Admin authenticated successfully. Welcome to the Owner Dashboard."
+            }
 
-    if admin.is_active != 1:
-        raise HTTPException(
-            status_code=403,
-            detail="This Admin account has been disabled. Please contact the Owner."
-        )
+        if admin.is_active != 1:
+            raise HTTPException(
+                status_code=403,
+                detail="This Admin account has been disabled. Please contact the Owner."
+            )
 
-    token = create_access_token({
-        "sub": str(admin.id),
-        "user_id": admin.admin_user_id,
-        "role": "ADMIN",
-        "name": admin.name
-    })
+        token = create_access_token({
+            "sub": str(admin.id),
+            "user_id": admin.admin_user_id,
+            "role": "ADMIN",
+            "name": admin.name
+        })
 
-    return {
-        "status": "success",
-        "user_type": "admin",
-        "role": "ADMIN",
-        "user_id": admin.admin_user_id,
-        "name": admin.name,
-        "access_token": token,
-        "message": f"Welcome back, Admin {admin.name}! Login successful."
-    }
+        return {
+            "status": "success",
+            "user_type": "admin",
+            "role": "ADMIN",
+            "user_id": admin.admin_user_id,
+            "name": admin.name,
+            "access_token": token,
+            "message": f"Welcome back, Admin {admin.name}! Login successful."
+        }
+
+    raise HTTPException(
+        status_code=401,
+        detail="Invalid Admin ID or password."
+    )
 
 
 @router.get("/farmer/{farmer_id}/supplies")

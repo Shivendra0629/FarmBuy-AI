@@ -12,6 +12,7 @@ from ..schemas import (
     AdminUpdateIdRequest,
     AdminUpdatePasswordRequest,
     AdminStatusRequest,
+    OwnerUpdateCredentialsRequest,
     DemoResetRequest,
     FarmerOut,
     BuyerOut,
@@ -22,7 +23,10 @@ from ..security import (
     verify_password,
     require_admin,
     require_owner,
-    OWNER_ADMIN_ID
+    OWNER_ADMIN_ID,
+    get_owner_credentials,
+    get_owner_admin_id,
+    save_owner_credentials
 )
 
 router = APIRouter(
@@ -44,19 +48,65 @@ def list_admins(
     Owner only: Lists all regular team Admin accounts along with the root Owner.
     Never returns passwords or password hashes.
     """
+    current_owner_id = get_owner_admin_id()
     owner_entry = AdminOut(
         id=0,
-        name="Platform Owner",
-        admin_user_id=OWNER_ADMIN_ID,
+        name="Super Admin (Owner)",
+        admin_user_id=current_owner_id,
         role="OWNER",
         is_active=1,
         created_at=None
     )
-    db_admins = db.query(Admin).order_by(Admin.created_at.asc()).all()
+    db_admins = db.query(Admin).filter(Admin.role == "ADMIN").order_by(Admin.created_at.asc()).all()
     results = [owner_entry]
     for a in db_admins:
         results.append(AdminOut.model_validate(a))
     return results
+
+
+@router.patch("/manage/owner/credentials", response_model=Dict[str, Any])
+@router.put("/manage/owner/credentials", response_model=Dict[str, Any])
+@router.post("/manage/owner/credentials", response_model=Dict[str, Any])
+def update_owner_credentials(
+    payload: OwnerUpdateCredentialsRequest,
+    db: Session = Depends(get_db),
+    claims: Dict[str, Any] = Depends(require_owner)
+):
+    """
+    Owner only: Updates the Super Admin User ID and/or Password.
+    Persists changes so new logins require the updated credentials.
+    """
+    new_id = payload.new_admin_user_id.strip() if payload.new_admin_user_id else None
+    new_pwd = payload.new_password.strip() if payload.new_password else None
+
+    if not new_id and not new_pwd:
+        raise HTTPException(status_code=400, detail="Must provide new User ID or new Password.")
+
+    if new_pwd and len(new_pwd) < 4:
+        raise HTTPException(status_code=400, detail="Password must be at least 4 characters long.")
+
+    if new_id:
+        # Check uniqueness against existing team admins
+        existing = db.query(Admin).filter(Admin.admin_user_id.ilike(new_id), Admin.role != "OWNER").first()
+        if existing:
+            raise HTTPException(status_code=400, detail=f"Admin ID '{new_id}' is already taken by a team admin.")
+
+    creds = save_owner_credentials(new_admin_id=new_id, new_password=new_pwd)
+
+    # Sync with DB if an OWNER record exists
+    owner_db = db.query(Admin).filter(Admin.role == "OWNER").first()
+    if owner_db:
+        if new_id:
+            owner_db.admin_user_id = new_id
+        if new_pwd:
+            owner_db.password_hash = hash_password(new_pwd)
+        db.commit()
+
+    return {
+        "status": "success",
+        "message": "Super Admin credentials updated successfully! Please use your new credentials on next login.",
+        "admin_user_id": creds["admin_user_id"]
+    }
 
 
 @router.post("/manage/create", response_model=Dict[str, Any])
@@ -80,7 +130,7 @@ def create_admin(
         )
 
     # 1. Enforce max 6 regular team admins
-    current_count = db.query(Admin).count()
+    current_count = db.query(Admin).filter(Admin.role == "ADMIN").count()
     if current_count >= 6:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -88,7 +138,8 @@ def create_admin(
         )
 
     # 2. Prevent collision with Owner ID
-    if clean_id.lower() == OWNER_ADMIN_ID.lower():
+    current_owner_id = get_owner_admin_id()
+    if clean_id.lower() == current_owner_id.lower():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot use the Owner / Super Admin identifier for a regular admin account."
@@ -149,7 +200,7 @@ def update_admin_user_id(
     if not new_id:
         raise HTTPException(status_code=400, detail="New Admin User ID cannot be empty.")
 
-    if new_id.lower() == OWNER_ADMIN_ID.lower():
+    if new_id.lower() == get_owner_admin_id().lower():
         raise HTTPException(status_code=400, detail="Cannot assign the Owner / Super Admin identifier.")
 
     # Verify uniqueness
@@ -255,12 +306,11 @@ def delete_admin(
 
 
 # ============================================================================
-# 2. OWNER-ONLY DEMO DATABASE RESET (Preserves schema & Admin accounts)
+# 2. OWNER-ONLY DATA WIPE & RESET (Preserves schema & Admin accounts)
 # ============================================================================
 
-def _seed_demo_operational_data(db: Session):
-    """Restores the standard FarmBuy AI demo dataset without dropping tables or touching admins."""
-    # 1. Clear operational tables
+def _wipe_platform_operational_data(db: Session):
+    """Wipes all operational farmer, buyer, supply, demand, and order data leaving platform 100% clean."""
     db.query(OrderItem).delete()
     db.query(Order).delete()
     db.query(Demand).delete()
@@ -268,115 +318,33 @@ def _seed_demo_operational_data(db: Session):
     db.query(Supply).delete()
     db.query(Farmer).delete()
     db.query(Buyer).delete()
-    db.query(Product).delete()
-    db.commit()
 
-    today = date.today()
-
-    # 2. Seed commodities
-    products_data = [
-        {"name": "Tomato", "category": "Vegetable", "unit": "kg", "mandi_benchmark_price": 22.0, "perishability_days": 7},
-        {"name": "Potato (Jyoti)", "category": "Tuber", "unit": "kg", "mandi_benchmark_price": 16.5, "perishability_days": 45},
-        {"name": "Red Onion", "category": "Allium", "unit": "kg", "mandi_benchmark_price": 28.0, "perishability_days": 25},
-        {"name": "Green Chilli", "category": "Spice", "unit": "kg", "mandi_benchmark_price": 54.0, "perishability_days": 10},
-        {"name": "Cauliflower", "category": "Vegetable", "unit": "kg", "mandi_benchmark_price": 18.0, "perishability_days": 8},
-    ]
-    products = {}
-    for pdata in products_data:
-        p = Product(**pdata)
-        db.add(p)
-        db.commit()
-        db.refresh(p)
-        products[p.name] = p
-
-    # 3. Seed demo farmers
-    farmers_data = [
-        {"name": "Subhash Mondal", "location": "Singur, Hooghly", "latitude": 22.8124, "longitude": 88.2312, "contact": "9831102931", "rating": 4.9, "farm_size_acres": 6.5, "state": "West Bengal", "pincode": "712409"},
-        {"name": "Ramesh Ghosh", "location": "Bardhaman Rural", "latitude": 23.2324, "longitude": 87.8615, "contact": "9434218902", "rating": 4.8, "farm_size_acres": 12.0, "state": "West Bengal", "pincode": "713101"},
-        {"name": "Animesh Biswas", "location": "Ranaghat, Nadia", "latitude": 23.1804, "longitude": 88.5801, "contact": "9732194821", "rating": 4.7, "farm_size_acres": 4.5, "state": "West Bengal", "pincode": "741201"},
-        {"name": "Prabir Samanta", "location": "Arambagh, Hooghly", "latitude": 22.8821, "longitude": 87.7812, "contact": "9830561234", "rating": 4.9, "farm_size_acres": 8.0, "state": "West Bengal", "pincode": "712601"},
-        {"name": "Debabrata Das", "location": "Uluberia, Howrah", "latitude": 22.4732, "longitude": 88.1102, "contact": "9647891230", "rating": 4.6, "farm_size_acres": 5.0, "state": "West Bengal", "pincode": "711315"}
-    ]
-    farmers = []
-    for fdata in farmers_data:
-        f = Farmer(**fdata)
-        db.add(f)
-        db.commit()
-        db.refresh(f)
-        farmers.append(f)
-
-    # 4. Seed demo buyer
-    demo_buyer = Buyer(
-        name="Posta Wholesale Procurement Hub",
-        address="Posta Market, Barabazar",
-        city="Kolkata",
-        phone_number="9830112233",
-        pincode="700007",
-        state="West Bengal"
-    )
-    db.add(demo_buyer)
-    db.commit()
-
-    # 5. Seed supplies
-    supplies_data = [
-        (farmers[0].id, products["Tomato"].id, 3500, 21.0, "Grade A"),
-        (farmers[1].id, products["Tomato"].id, 4000, 23.0, "Grade A"),
-        (farmers[2].id, products["Tomato"].id, 2200, 20.5, "Grade B"),
-        (farmers[3].id, products["Tomato"].id, 3000, 22.5, "Grade A"),
-        (farmers[1].id, products["Potato (Jyoti)"].id, 12000, 15.5, "Grade A"),
-        (farmers[3].id, products["Potato (Jyoti)"].id, 15000, 16.0, "Grade A"),
-        (farmers[0].id, products["Red Onion"].id, 4000, 27.5, "Grade A"),
-        (farmers[2].id, products["Red Onion"].id, 3500, 28.5, "Grade A"),
-        (farmers[0].id, products["Green Chilli"].id, 1200, 53.0, "Grade A"),
-        (farmers[4].id, products["Cauliflower"].id, 3800, 18.5, "Grade B"),
-    ]
-    for f_id, p_id, qty, price, grade in supplies_data:
-        s = Supply(
-            farmer_id=f_id,
-            product_id=p_id,
-            quantity=qty,
-            cleared_quantity=0.0,
-            initial_quantity=qty,
-            expected_price=price,
-            quality_grade=grade,
-            available_date=today + timedelta(days=1),
-            harvest_date=today - timedelta(days=1)
-        )
-        db.add(s)
-
-    # 6. Seed 60-day historical demand
-    random.seed(42)
-    for p_name, prod in products.items():
-        base_vol = 7000.0 if "Potato" in p_name else (5500.0 if "Tomato" in p_name else 3500.0)
-        base_price = prod.mandi_benchmark_price
-        for day_offset in range(60, 0, -1):
-            hist_date = today - timedelta(days=day_offset)
-            dow = hist_date.weekday()
-            surge = 1.18 if dow in (4, 5, 6) else 0.94
-            trend_factor = 1.0 + ((60 - day_offset) * 0.003)
-            qty = round(base_vol * surge * trend_factor + random.uniform(-300, 300), 1)
-            mandi_p = round(base_price + random.uniform(-1.5, 1.8), 2)
-            dh = DemandHistory(
-                product_id=prod.id,
-                date=hist_date,
-                region="Kolkata Metro Hub",
-                quantity_demanded=qty,
-                average_mandi_price=mandi_p
-            )
-            db.add(dh)
-
+    # Ensure baseline agricultural commodities exist so price intelligence works
+    existing_prods = db.query(Product).count()
+    if existing_prods == 0:
+        products_data = [
+            {"name": "Tomato", "category": "Vegetable", "unit": "kg", "mandi_benchmark_price": 22.0, "perishability_days": 7},
+            {"name": "Potato (Jyoti)", "category": "Tuber", "unit": "kg", "mandi_benchmark_price": 16.5, "perishability_days": 45},
+            {"name": "Red Onion", "category": "Allium", "unit": "kg", "mandi_benchmark_price": 28.0, "perishability_days": 25},
+            {"name": "Green Chilli", "category": "Spice", "unit": "kg", "mandi_benchmark_price": 54.0, "perishability_days": 10},
+            {"name": "Cauliflower", "category": "Vegetable", "unit": "kg", "mandi_benchmark_price": 18.0, "perishability_days": 8},
+        ]
+        for pdata in products_data:
+            p = Product(**pdata)
+            db.add(p)
     db.commit()
 
 
 @router.post("/reset-demo-data", response_model=Dict[str, Any])
+@router.post("/wipe-data", response_model=Dict[str, Any])
 def reset_demo_database(
     payload: DemoResetRequest,
     db: Session = Depends(get_db),
     claims: Dict[str, Any] = Depends(require_owner)
 ):
     """
-    Owner only: Restores the standard FarmBuy AI demo database.
-    Requires explicit confirmation.
+    Owner only: Wipes all test farmers, buyers, supplies, and platform orders.
+    Leaves the platform 100% clean with NO predefined or synthetic users.
     Preserves database schema and Admin accounts intact.
     """
     if not payload.confirm:
@@ -385,11 +353,11 @@ def reset_demo_database(
             detail="Reset confirmation flag is required."
         )
 
-    _seed_demo_operational_data(db)
+    _wipe_platform_operational_data(db)
 
     return {
         "status": "success",
-        "message": "FarmBuy AI demo dataset successfully restored! Database schema and Admin accounts preserved."
+        "message": "All farmer, buyer, supply, and order records wiped! Database is clean with zero synthetic/predefined records. Admin accounts are preserved."
     }
 
 
@@ -397,13 +365,31 @@ def reset_demo_database(
 # 3. ADMIN & OWNER OPERATIONAL DATA (Requires role in ['ADMIN', 'OWNER'])
 # ============================================================================
 
-@router.get("/farmers", response_model=List[FarmerOut])
+@router.get("/farmers")
 def get_admin_farmers(
     db: Session = Depends(get_db),
     claims: Dict[str, Any] = Depends(require_admin)
 ):
-    """Admin & Owner: Lists all registered farmers with coordinates and ratings."""
-    return db.query(Farmer).order_by(Farmer.id.desc()).all()
+    """Admin & Owner: Lists all registered farmers with coordinates, phone, and ratings."""
+    farmers = db.query(Farmer).order_by(Farmer.id.desc()).all()
+    results = []
+    for f in farmers:
+        phone = f.contact or ""
+        results.append({
+            "id": f.id,
+            "name": f.name,
+            "phone_number": phone,
+            "contact": phone,
+            "address": f.address or f.location or "",
+            "location": f.location or "",
+            "state": f.state or "West Bengal",
+            "pincode": f.pincode or "",
+            "latitude": f.latitude,
+            "longitude": f.longitude,
+            "rating": f.rating,
+            "farm_size_acres": f.farm_size_acres
+        })
+    return results
 
 
 @router.get("/buyers", response_model=List[BuyerOut])
@@ -437,10 +423,13 @@ def get_admin_supplies(
             "farmer_contact": f.contact,
             "location": f.location,
             "product_id": p.id,
+            "commodity": p.name,
             "product_name": p.name,
             "category": p.category,
+            "quantity_kg": s.quantity,
             "quantity_left_kg": s.quantity,
             "quantity_ordered_kg": s.cleared_quantity or 0.0,
+            "price_per_kg": s.expected_price,
             "expected_price": s.expected_price,
             "mandi_benchmark": p.mandi_benchmark_price,
             "quality_grade": s.quality_grade,
@@ -459,6 +448,7 @@ def get_admin_orders(
     results = []
     for o in orders:
         product = db.query(Product).filter(Product.id == o.product_id).first()
+        prod_name = product.name if product else "Produce"
         items = (
             db.query(OrderItem, Farmer)
             .join(Farmer, OrderItem.farmer_id == Farmer.id)
@@ -479,17 +469,22 @@ def get_admin_orders(
         results.append({
             "id": o.id,
             "order_number": o.order_number,
+            "order_code": o.order_number,
             "buyer_name": o.buyer_name,
             "product_id": o.product_id,
-            "product_name": product.name if product else "Produce",
+            "product_name": prod_name,
+            "commodity": prod_name,
             "total_quantity_kg": o.total_quantity,
+            "total_quantity": o.total_quantity,
             "agreed_price_per_kg": o.agreed_price_per_kg,
             "total_procurement_cost": o.total_procurement_cost,
-            "logistics_cost": o.logistics_cost,
+            "total_cost": o.total_procurement_cost,
+            "logistics_cost": o.logistics_cost or 0.0,
             "grand_total": round(o.total_procurement_cost + (o.logistics_cost or 0.0), 2),
-            "estimated_distance_km": o.estimated_distance_km,
+            "estimated_distance_km": o.estimated_distance_km or 0.0,
+            "total_distance_km": o.estimated_distance_km or 0.0,
             "status": o.status,
-            "created_at": o.created_at.strftime("%Y-%m-%d %I:%M %p") if o.created_at else "",
+            "created_at": o.created_at.strftime("%d %b %Y, %I:%M %p") if o.created_at else "",
             "items": item_list
         })
     return results

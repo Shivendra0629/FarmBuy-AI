@@ -33,21 +33,22 @@ def init_db_defaults():
                 db.add(Product(**pdata))
             db.commit()
 
-        # 2. Ensure Super Admin (OWNER) account exists in the database
-        owner_exists = db.query(Admin).filter(Admin.role == "OWNER").first()
-        if not owner_exists:
-            creds = get_owner_credentials()
-            owner_id = creds.get("admin_user_id", "Sm_0629")
-            pwd = creds.get("password_plain", "9973868328")
-            pwd_hash = creds.get("password_hash") or hash_password(pwd)
-            super_admin = Admin(
-                name="Super Admin",
-                admin_user_id=owner_id,
-                password_hash=pwd_hash,
-                role="OWNER",
-                is_active=1
-            )
-            db.add(super_admin)
+        # 2. Fix admin IDs: Ensure Super Admin does not occupy id=1 in admins table,
+        # and re-index regular team admins so they start strictly from id=1.
+        # Super Admin is the platform root owner managed via owner_config.json / env vars.
+        owner_in_db = db.query(Admin).filter(Admin.role == "OWNER").first()
+        if owner_in_db:
+            db.delete(owner_in_db)
+            db.commit()
+
+        # Re-index existing regular admins starting from id=1
+        regular_admins = db.query(Admin).filter(Admin.role == "ADMIN").order_by(Admin.created_at.asc(), Admin.id.asc()).all()
+        reindexed = False
+        for target_id, adm in enumerate(regular_admins, start=1):
+            if adm.id != target_id:
+                adm.id = target_id
+                reindexed = True
+        if reindexed:
             db.commit()
     except Exception as e:
         print(f"[AgriConnect AI] DB initialization warning: {e}")

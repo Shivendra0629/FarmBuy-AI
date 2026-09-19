@@ -947,9 +947,13 @@ async function loadAdminAccounts() {
                     </div>
                 `;
 
+            const idCell = isOwner
+                ? `<span style="display:inline-block; padding:2px 8px; font-size:11.5px; font-weight:700; color:#5b21b6; background:#f3e8ff; border:1px solid #d8b4fe; border-radius:6px;">👑 Root</span>`
+                : `<strong style="font-size:13px; color:#1e293b;">#${a.id}</strong>`;
+
             return `
                 <tr>
-                    <td><strong>#${a.id}</strong></td>
+                    <td>${idCell}</td>
                     <td style="font-weight:700; color:#1e293b;">${escapeHtml(a.name)}</td>
                     <td><code>${escapeHtml(a.admin_user_id)}</code></td>
                     <td>${roleBadge}</td>

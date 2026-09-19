@@ -57,7 +57,7 @@ def list_admins(
         is_active=1,
         created_at=None
     )
-    db_admins = db.query(Admin).filter(Admin.role == "ADMIN").order_by(Admin.created_at.asc()).all()
+    db_admins = db.query(Admin).filter(Admin.role == "ADMIN").order_by(Admin.id.asc()).all()
     results = [owner_entry]
     for a in db_admins:
         results.append(AdminOut.model_validate(a))
@@ -156,7 +156,15 @@ def create_admin(
     # 4. Hash password securely using PBKDF2-HMAC-SHA256
     pwd_hash = hash_password(clean_password)
 
+    # 5. Determine next sequential slot starting strictly from 1 (1 to 6)
+    existing_admins = db.query(Admin).filter(Admin.role == "ADMIN").all()
+    existing_ids = {a.id for a in existing_admins}
+    next_id = 1
+    while next_id in existing_ids:
+        next_id += 1
+
     new_admin = Admin(
+        id=next_id,
         name=clean_name,
         admin_user_id=clean_id,
         password_hash=pwd_hash,
@@ -298,6 +306,16 @@ def delete_admin(
     admin_uid = admin.admin_user_id
     db.delete(admin)
     db.commit()
+
+    # Re-sequence remaining team admins so IDs remain compact 1..N without gaps
+    remaining = db.query(Admin).filter(Admin.role == "ADMIN").order_by(Admin.id.asc()).all()
+    needs_commit = False
+    for target_id, a in enumerate(remaining, start=1):
+        if a.id != target_id:
+            a.id = target_id
+            needs_commit = True
+    if needs_commit:
+        db.commit()
 
     return {
         "status": "success",
@@ -499,7 +517,7 @@ def get_admin_stats(
     total_farmers = db.query(Farmer).count()
     total_buyers = db.query(Buyer).count()
     total_products = db.query(Product).count()
-    total_admins = db.query(Admin).count()
+    total_admins = db.query(Admin).filter(Admin.role == "ADMIN").count()
     total_supplies = db.query(Supply).all()
     total_orders = db.query(Order).all()
 

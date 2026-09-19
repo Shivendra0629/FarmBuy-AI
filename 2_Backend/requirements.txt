@@ -4,6 +4,7 @@ sqlalchemy>=2.0.25
 pydantic>=2.6.0
 numpy>=1.26.0
 python-multipart>=0.0.9
+psycopg2-binary>=2.9.9
 # Optional ML extensions (NumPy analytical OLS is used by default for zero-deadlock guarantee)
 # scikit-learn>=1.4.0
 # scipy>=1.12.0

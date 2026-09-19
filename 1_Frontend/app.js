@@ -180,18 +180,43 @@ function setBuyerAuthMode(mode) {
     }
 }
 
-// Helper: Authenticated fetch sending Bearer token
+// Helper: Authenticated fetch sending Bearer token with fresh data guarantees
 async function authFetch(url, options = {}) {
-    const headers = { ...(options.headers || {}) };
+    const headers = {
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        ...(options.headers || {})
+    };
     if (state.currentUser && state.currentUser.access_token) {
         headers["Authorization"] = `Bearer ${state.currentUser.access_token}`;
     }
-    const res = await fetch(url, { ...options, headers });
+    const res = await fetch(url, { cache: "no-store", ...options, headers });
     if (res.status === 401) {
         showToast("⚠️ Authentication session expired. Please log in again.", "warning");
         handleLogout();
     }
     return res;
+}
+
+// Helper: Show / Hide password visibility toggle for password fields
+function togglePasswordVisibility(inputId, btn) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    if (input.type === "password") {
+        input.type = "text";
+        if (btn) {
+            btn.innerHTML = "👁️‍🗨️";
+            btn.title = "Hide password";
+            btn.setAttribute("aria-label", "Hide password");
+        }
+    } else {
+        input.type = "password";
+        if (btn) {
+            btn.innerHTML = "👁️";
+            btn.title = "Show password";
+            btn.setAttribute("aria-label", "Show password");
+        }
+    }
 }
 
 // Check saved session on load
@@ -1735,7 +1760,10 @@ async function checkBackendStatus() {
 // 2. Load Products dynamically
 async function loadProducts() {
     try {
-        const res = await fetch(`${API_BASE}/api/products`);
+        const res = await fetch(`${API_BASE}/api/products`, {
+            cache: "no-store",
+            headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
+        });
         const products = await res.json();
         state.products = products;
         const select = document.getElementById("productSelect");

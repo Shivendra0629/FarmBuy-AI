@@ -2418,3 +2418,46 @@ body > .skiptranslate:not(.navbar):not(.app-container) {
     background: #fee2e2;
     border-color: #f87171;
 }
+
+/* Password visibility field wrapper & toggle eye button */
+.password-field-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+.password-field-wrapper input {
+    padding-right: 42px !important;
+}
+
+.password-toggle-btn {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    color: #64748b;
+    padding: 6px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: color 0.15s ease, background-color 0.15s ease;
+    user-select: none;
+    z-index: 2;
+}
+
+.password-toggle-btn:hover {
+    color: #0f172a;
+    background-color: rgba(0, 0, 0, 0.06);
+}
+
+.password-toggle-btn:focus-visible {
+    outline: 2px solid #7c3aed;
+    outline-offset: 1px;
+}

@@ -36,3 +36,10 @@ node_modules/
 # Build/cache
 dist/
 build/
+
+# Databases
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3

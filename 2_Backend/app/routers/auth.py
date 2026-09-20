@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import date, datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import random
 
-from ..database import get_db
-from ..models import Farmer, Buyer, Product, Supply, Order, OrderItem, Demand, Admin
+from ..database import get_db, IS_SQLITE
+from ..models import Farmer, Buyer, Product, Supply, Order, OrderItem, Demand, DemandHistory, Admin
 from ..schemas import (
     FarmerLoginRegisterRequest,
     FarmerLoginRequest,
@@ -25,7 +25,8 @@ from ..security import (
     OWNER_ADMIN_ID,
     OWNER_ADMIN_PASSWORD,
     verify_owner_login,
-    get_owner_admin_id
+    get_owner_admin_id,
+    require_owner
 )
 
 router = APIRouter(
@@ -83,79 +84,84 @@ def _register_farmer_record(payload: FarmerLoginRegisterRequest, db: Session):
 
     lat, lon = estimate_coordinates(clean_state, clean_pincode)
 
-    if not farmer:
-        farmer = Farmer(
-            name=clean_name,
-            address=clean_address,
-            location=f"{clean_address}, {clean_state} ({clean_pincode})",
-            contact=clean_phone,
-            pincode=clean_pincode,
-            state=clean_state,
-            latitude=lat,
-            longitude=lon,
-            rating=round(random.uniform(4.7, 5.0), 1),
-            farm_size_acres=round(random.uniform(3.0, 10.0), 1)
-        )
-        db.add(farmer)
-        db.commit()
-        db.refresh(farmer)
-    else:
-        farmer.address = clean_address
-        farmer.pincode = clean_pincode
-        farmer.state = clean_state
-        farmer.location = f"{clean_address}, {clean_state} ({clean_pincode})"
-        farmer.latitude = lat
-        farmer.longitude = lon
-        farmer.contact = clean_phone
-        db.commit()
-        db.refresh(farmer)
-
-    product = None
-    if clean_commodity:
-        product = db.query(Product).filter(Product.name.ilike(clean_commodity)).first()
-        if not product:
-            product = Product(
-                name=clean_commodity.capitalize(),
-                category="Agricultural Produce",
-                unit="kg",
-                mandi_benchmark_price=round(float(payload.price_per_kg or 20.0) * 1.05, 1),
-                perishability_days=14
+    try:
+        if not farmer:
+            farmer = Farmer(
+                name=clean_name,
+                address=clean_address,
+                location=f"{clean_address}, {clean_state} ({clean_pincode})",
+                contact=clean_phone,
+                pincode=clean_pincode,
+                state=clean_state,
+                latitude=lat,
+                longitude=lon,
+                rating=round(random.uniform(4.7, 5.0), 1),
+                farm_size_acres=round(random.uniform(3.0, 10.0), 1)
             )
-            db.add(product)
+            db.add(farmer)
             db.commit()
-            db.refresh(product)
-
-        existing_supply = db.query(Supply).filter(
-            Supply.farmer_id == farmer.id,
-            Supply.product_id == product.id
-        ).first()
-
-        today = date.today()
-        qty = float(payload.quantity_kg or 1000)
-        price = float(payload.price_per_kg or 20)
-        if existing_supply:
-            existing_supply.quantity += qty
-            if existing_supply.initial_quantity is None:
-                existing_supply.initial_quantity = existing_supply.quantity
-            else:
-                existing_supply.initial_quantity += qty
-            existing_supply.expected_price = price
-            existing_supply.available_date = today
+            db.refresh(farmer)
         else:
-            new_supply = Supply(
-                farmer_id=farmer.id,
-                product_id=product.id,
-                quantity=qty,
-                cleared_quantity=0.0,
-                initial_quantity=qty,
-                expected_price=price,
-                quality_grade="Grade A",
-                available_date=today,
-                harvest_date=today
-            )
-            db.add(new_supply)
+            farmer.name = clean_name
+            farmer.address = clean_address
+            farmer.pincode = clean_pincode
+            farmer.state = clean_state
+            farmer.location = f"{clean_address}, {clean_state} ({clean_pincode})"
+            farmer.latitude = lat
+            farmer.longitude = lon
+            farmer.contact = clean_phone
+            db.commit()
+            db.refresh(farmer)
 
-        db.commit()
+        product = None
+        if clean_commodity:
+            product = db.query(Product).filter(Product.name.ilike(clean_commodity)).first()
+            if not product:
+                product = Product(
+                    name=clean_commodity.capitalize(),
+                    category="Agricultural Produce",
+                    unit="kg",
+                    mandi_benchmark_price=round(float(payload.price_per_kg or 20.0) * 1.05, 1),
+                    perishability_days=14
+                )
+                db.add(product)
+                db.commit()
+                db.refresh(product)
+
+            existing_supply = db.query(Supply).filter(
+                Supply.farmer_id == farmer.id,
+                Supply.product_id == product.id
+            ).first()
+
+            today = date.today()
+            qty = float(payload.quantity_kg or 1000)
+            price = float(payload.price_per_kg or 20)
+            if existing_supply:
+                existing_supply.quantity += qty
+                if existing_supply.initial_quantity is None:
+                    existing_supply.initial_quantity = existing_supply.quantity
+                else:
+                    existing_supply.initial_quantity += qty
+                existing_supply.expected_price = price
+                existing_supply.available_date = today
+            else:
+                new_supply = Supply(
+                    farmer_id=farmer.id,
+                    product_id=product.id,
+                    quantity=qty,
+                    cleared_quantity=0.0,
+                    initial_quantity=qty,
+                    expected_price=price,
+                    quality_grade="Grade A",
+                    available_date=today,
+                    harvest_date=today
+                )
+                db.add(new_supply)
+
+            db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Database transaction failed: {str(e)}")
 
     token = create_access_token({
         "sub": str(farmer.id),
@@ -283,26 +289,31 @@ def _register_buyer_record(payload: BuyerLoginRegisterRequest, db: Session):
 
     buyer = db.query(Buyer).filter(Buyer.phone_number == clean_phone).first()
 
-    if not buyer:
-        buyer = Buyer(
-            name=clean_name,
-            address=clean_address,
-            city=clean_city,
-            phone_number=clean_phone,
-            pincode=clean_pincode,
-            state=clean_state
-        )
-        db.add(buyer)
-        db.commit()
-        db.refresh(buyer)
-    else:
-        buyer.address = clean_address
-        buyer.city = clean_city
-        buyer.pincode = clean_pincode
-        buyer.state = clean_state
-        buyer.phone_number = clean_phone
-        db.commit()
-        db.refresh(buyer)
+    try:
+        if not buyer:
+            buyer = Buyer(
+                name=clean_name,
+                address=clean_address,
+                city=clean_city,
+                phone_number=clean_phone,
+                pincode=clean_pincode,
+                state=clean_state
+            )
+            db.add(buyer)
+            db.commit()
+            db.refresh(buyer)
+        else:
+            buyer.name = clean_name
+            buyer.address = clean_address
+            buyer.city = clean_city
+            buyer.pincode = clean_pincode
+            buyer.state = clean_state
+            buyer.phone_number = clean_phone
+            db.commit()
+            db.refresh(buyer)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Database transaction failed: {str(e)}")
 
     token = create_access_token({
         "sub": str(buyer.id),
@@ -427,26 +438,7 @@ def login_admin(payload: AdminLoginRequest, db: Session = Depends(get_db)):
     if not user_id_input or not password_input:
         raise HTTPException(status_code=400, detail="Admin User ID and Password are required.")
 
-    # 1. Check Owner / Super Admin Credentials (via security helper)
-    if verify_owner_login(user_id_input, password_input):
-        owner_id = get_owner_admin_id()
-        token = create_access_token({
-            "sub": "owner",
-            "user_id": owner_id,
-            "role": "OWNER",
-            "name": "Super Admin"
-        })
-        return {
-            "status": "success",
-            "user_type": "owner",
-            "role": "OWNER",
-            "user_id": owner_id,
-            "name": "Super Admin",
-            "access_token": token,
-            "message": "Super Admin authenticated successfully. Welcome to the Owner Dashboard."
-        }
-
-    # 2. Check Database Admin Accounts (Both OWNER and regular ADMIN)
+    # 1. Check Persistent Database Admin Accounts first (Both OWNER and regular ADMIN)
     admin = db.query(Admin).filter(Admin.admin_user_id == user_id_input).first()
     if admin and verify_password(password_input, admin.password_hash):
         if admin.role == "OWNER":
@@ -487,6 +479,25 @@ def login_admin(payload: AdminLoginRequest, db: Session = Depends(get_db)):
             "name": admin.name,
             "access_token": token,
             "message": f"Welcome back, Admin {admin.name}! Login successful."
+        }
+
+    # 2. Fallback to verify_owner_login helper (e.g. initial boot or env credentials)
+    if verify_owner_login(user_id_input, password_input, db=db):
+        owner_id = get_owner_admin_id(db=db)
+        token = create_access_token({
+            "sub": "owner",
+            "user_id": owner_id,
+            "role": "OWNER",
+            "name": "Super Admin"
+        })
+        return {
+            "status": "success",
+            "user_type": "owner",
+            "role": "OWNER",
+            "user_id": owner_id,
+            "name": "Super Admin",
+            "access_token": token,
+            "message": "Super Admin authenticated successfully. Welcome to the Owner Dashboard."
         }
 
     raise HTTPException(
@@ -599,47 +610,51 @@ def add_farmer_supply(payload: FarmerAddSupplyRequest, db: Session = Depends(get
         raise HTTPException(status_code=404, detail="Farmer not found")
 
     clean_comm = payload.commodity.strip()
-    product = db.query(Product).filter(Product.name.ilike(clean_comm)).first()
-    if not product:
-        product = Product(
-            name=clean_comm.capitalize(),
-            category="Agricultural Produce",
-            unit="kg",
-            mandi_benchmark_price=round(payload.price_per_kg * 1.05, 1),
-            perishability_days=14
-        )
-        db.add(product)
-        db.commit()
-        db.refresh(product)
+    try:
+        product = db.query(Product).filter(Product.name.ilike(clean_comm)).first()
+        if not product:
+            product = Product(
+                name=clean_comm.capitalize(),
+                category="Agricultural Produce",
+                unit="kg",
+                mandi_benchmark_price=round(payload.price_per_kg * 1.05, 1),
+                perishability_days=14
+            )
+            db.add(product)
+            db.commit()
+            db.refresh(product)
 
-    today = date.today()
-    supply = db.query(Supply).filter(
-        Supply.farmer_id == farmer.id,
-        Supply.product_id == product.id
-    ).first()
+        today = date.today()
+        supply = db.query(Supply).filter(
+            Supply.farmer_id == farmer.id,
+            Supply.product_id == product.id
+        ).first()
 
-    if supply:
-        supply.quantity += payload.quantity_kg
-        if supply.initial_quantity is None:
-            supply.initial_quantity = supply.quantity
+        if supply:
+            supply.quantity += payload.quantity_kg
+            if supply.initial_quantity is None:
+                supply.initial_quantity = supply.quantity
+            else:
+                supply.initial_quantity += payload.quantity_kg
+            supply.expected_price = payload.price_per_kg
         else:
-            supply.initial_quantity += payload.quantity_kg
-        supply.expected_price = payload.price_per_kg
-    else:
-        supply = Supply(
-            farmer_id=farmer.id,
-            product_id=product.id,
-            quantity=payload.quantity_kg,
-            cleared_quantity=0.0,
-            initial_quantity=payload.quantity_kg,
-            expected_price=payload.price_per_kg,
-            quality_grade=payload.quality_grade,
-            available_date=today,
-            harvest_date=today
-        )
-        db.add(supply)
+            supply = Supply(
+                farmer_id=farmer.id,
+                product_id=product.id,
+                quantity=payload.quantity_kg,
+                cleared_quantity=0.0,
+                initial_quantity=payload.quantity_kg,
+                expected_price=payload.price_per_kg,
+                quality_grade=payload.quality_grade,
+                available_date=today,
+                harvest_date=today
+            )
+            db.add(supply)
 
-    db.commit()
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to add farmer supply: {str(e)}")
 
     return {
         "status": "success",
@@ -667,29 +682,34 @@ def update_farmer_supply(
         raise HTTPException(status_code=404, detail="Commodity supply record not found")
 
     clean_comm = payload.commodity.strip()
-    product = db.query(Product).filter(Product.name.ilike(clean_comm)).first()
-    if not product:
-        product = Product(
-            name=clean_comm.capitalize(),
-            category="Agricultural Produce",
-            unit="kg",
-            mandi_benchmark_price=round(payload.price_per_kg * 1.05, 1),
-            perishability_days=14
-        )
-        db.add(product)
+    try:
+        product = db.query(Product).filter(Product.name.ilike(clean_comm)).first()
+        if not product:
+            product = Product(
+                name=clean_comm.capitalize(),
+                category="Agricultural Produce",
+                unit="kg",
+                mandi_benchmark_price=round(payload.price_per_kg * 1.05, 1),
+                perishability_days=14
+            )
+            db.add(product)
+            db.commit()
+            db.refresh(product)
+
+        supply.product_id = product.id
+        supply.quantity = payload.quantity_kg
+        supply.expected_price = payload.price_per_kg
+        if payload.quality_grade:
+            supply.quality_grade = payload.quality_grade
+
+        cleared = float(supply.cleared_quantity or 0.0)
+        supply.initial_quantity = max(float(supply.initial_quantity or 0.0), payload.quantity_kg + cleared)
+
         db.commit()
-        db.refresh(product)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to update supply record: {str(e)}")
 
-    supply.product_id = product.id
-    supply.quantity = payload.quantity_kg
-    supply.expected_price = payload.price_per_kg
-    if payload.quality_grade:
-        supply.quality_grade = payload.quality_grade
-
-    cleared = float(supply.cleared_quantity or 0.0)
-    supply.initial_quantity = max(float(supply.initial_quantity or 0.0), payload.quantity_kg + cleared)
-
-    db.commit()
     return {
         "status": "success",
         "message": f"Successfully updated {product.name}: {payload.quantity_kg:,.0f} kg @ ₹{payload.price_per_kg:.2f}/kg."
@@ -719,17 +739,21 @@ def clear_farmer_stock(payload: FarmerClearStockRequest, db: Session = Depends(g
             detail=f"Cannot record order of {order_qty:,.0f} kg. Only {supply.quantity:,.0f} kg remaining in stock."
         )
 
-    supply.quantity = max(0.0, supply.quantity - order_qty)
-    supply.cleared_quantity = (supply.cleared_quantity or 0.0) + order_qty
+    try:
+        supply.quantity = max(0.0, supply.quantity - order_qty)
+        supply.cleared_quantity = (supply.cleared_quantity or 0.0) + order_qty
 
-    product = db.query(Product).filter(Product.id == supply.product_id).first()
-    prod_name = product.name if product else "Commodity"
+        product = db.query(Product).filter(Product.id == supply.product_id).first()
+        prod_name = product.name if product else "Commodity"
 
-    realized_rate = payload.selling_price_per_kg or supply.expected_price
-    cleared_val = round(order_qty * realized_rate, 2)
+        realized_rate = payload.selling_price_per_kg or supply.expected_price
+        cleared_val = round(order_qty * realized_rate, 2)
 
-    db.commit()
-    db.refresh(supply)
+        db.commit()
+        db.refresh(supply)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to record order: {str(e)}")
 
     return {
         "status": "success",
@@ -832,29 +856,33 @@ def delete_farmer_order_item(
 
     ord_rec = db.query(Order).filter(Order.id == item.order_id).first()
     prod_name = "Crop"
-    if ord_rec:
-        product = db.query(Product).filter(Product.id == ord_rec.product_id).first()
-        if product:
-            prod_name = product.name
+    try:
+        if ord_rec:
+            product = db.query(Product).filter(Product.id == ord_rec.product_id).first()
+            if product:
+                prod_name = product.name
 
-        supply = db.query(Supply).filter(
-            Supply.farmer_id == farmer_id,
-            Supply.product_id == ord_rec.product_id
-        ).first()
-        if supply:
-            supply.quantity += item.allocated_quantity
-            supply.cleared_quantity = max(0.0, (supply.cleared_quantity or 0.0) - item.allocated_quantity)
+            supply = db.query(Supply).filter(
+                Supply.farmer_id == farmer_id,
+                Supply.product_id == ord_rec.product_id
+            ).first()
+            if supply:
+                supply.quantity += item.allocated_quantity
+                supply.cleared_quantity = max(0.0, (supply.cleared_quantity or 0.0) - item.allocated_quantity)
 
-    qty = item.allocated_quantity
-    parent_order_id = item.order_id
-    db.delete(item)
-    db.commit()
-
-    # If parent order has no other items, clean it up
-    remaining = db.query(OrderItem).filter(OrderItem.order_id == parent_order_id).count()
-    if remaining == 0:
-        db.query(Order).filter(Order.id == parent_order_id).delete()
+        qty = item.allocated_quantity
+        parent_order_id = item.order_id
+        db.delete(item)
         db.commit()
+
+        # If parent order has no other items, clean it up
+        remaining = db.query(OrderItem).filter(OrderItem.order_id == parent_order_id).count()
+        if remaining == 0:
+            db.query(Order).filter(Order.id == parent_order_id).delete()
+            db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to delete order item: {str(e)}")
 
     return {
         "status": "success",
@@ -887,26 +915,30 @@ def clear_all_farmer_orders(
     deleted_count = 0
     restored_kg = 0.0
     affected_order_ids = set()
-    for item, ord_rec in records:
-        affected_order_ids.add(ord_rec.id)
-        supply = db.query(Supply).filter(
-            Supply.farmer_id == farmer_id,
-            Supply.product_id == ord_rec.product_id
-        ).first()
-        if supply:
-            supply.quantity += item.allocated_quantity
-            supply.cleared_quantity = max(0.0, (supply.cleared_quantity or 0.0) - item.allocated_quantity)
-            restored_kg += item.allocated_quantity
-        db.delete(item)
-        deleted_count += 1
+    try:
+        for item, ord_rec in records:
+            affected_order_ids.add(ord_rec.id)
+            supply = db.query(Supply).filter(
+                Supply.farmer_id == farmer_id,
+                Supply.product_id == ord_rec.product_id
+            ).first()
+            if supply:
+                supply.quantity += item.allocated_quantity
+                supply.cleared_quantity = max(0.0, (supply.cleared_quantity or 0.0) - item.allocated_quantity)
+                restored_kg += item.allocated_quantity
+            db.delete(item)
+            deleted_count += 1
 
-    db.commit()
+        db.commit()
 
-    # Clean up parent orders if empty
-    for o_id in affected_order_ids:
-        if db.query(OrderItem).filter(OrderItem.order_id == o_id).count() == 0:
-            db.query(Order).filter(Order.id == o_id).delete()
-    db.commit()
+        # Clean up parent orders if empty
+        for o_id in affected_order_ids:
+            if db.query(OrderItem).filter(OrderItem.order_id == o_id).count() == 0:
+                db.query(Order).filter(Order.id == o_id).delete()
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to clear orders: {str(e)}")
 
     return {
         "status": "success",
@@ -917,19 +949,36 @@ def clear_all_farmer_orders(
 
 
 @router.post("/reset-database")
-def reset_database(db: Session = Depends(get_db)):
+def reset_database(
+    db: Session = Depends(get_db),
+    claims: Dict[str, Any] = Depends(require_owner)
+):
     """
-    Clears all user data (farmers, buyers, supplies, orders, order items, demands)
-    so the platform starts 100% fresh for new logins.
+    Owner only: Clears all user data (farmers, buyers, supplies, orders, order items, demands)
+    so the platform starts 100% fresh for new logins while preserving Admin accounts.
     """
-    db.query(OrderItem).delete()
-    db.query(Order).delete()
-    db.query(Supply).delete()
-    db.query(Demand).delete()
-    db.query(Farmer).delete()
-    db.query(Buyer).delete()
-    db.commit()
+    try:
+        db.query(OrderItem).delete()
+        db.query(Order).delete()
+        db.query(Demand).delete()
+        db.query(DemandHistory).delete()
+        db.query(Supply).delete()
+        db.query(Farmer).delete()
+        db.query(Buyer).delete()
+
+        if IS_SQLITE:
+            try:
+                from sqlalchemy import text
+                db.execute(text("DELETE FROM sqlite_sequence WHERE name IN ('farmers', 'buyers', 'supplies', 'orders', 'order_items', 'demands', 'demand_history')"))
+            except Exception:
+                pass
+
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to reset database: {str(e)}")
+
     return {
         "status": "success",
-        "message": "Complete database user records cleared! Ready for new farmer and buyer logins."
+        "message": "Complete database user records cleared! Ready for new farmer and buyer logins. Admin accounts preserved."
     }

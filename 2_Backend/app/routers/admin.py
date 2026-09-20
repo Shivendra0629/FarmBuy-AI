@@ -50,7 +50,7 @@ def list_admins(
     Owner only: Lists all regular team Admin accounts along with the root Owner.
     Never returns passwords or password hashes.
     """
-    current_owner_id = get_owner_admin_id()
+    current_owner_id = get_owner_admin_id(db=db)
     owner_entry = AdminOut(
         id=0,
         name="Super Admin (Owner)",
@@ -75,7 +75,7 @@ def update_owner_credentials(
     claims: Dict[str, Any] = Depends(require_owner)
 ):
     """
-    Owner only: Updates the Super Admin User ID and/or Password.
+    Owner only: Updates the Super Admin User ID and/or Password in the database.
     Persists changes so new logins require the updated credentials.
     """
     new_id = payload.new_admin_user_id.strip() if payload.new_admin_user_id else None
@@ -93,16 +93,8 @@ def update_owner_credentials(
         if existing:
             raise HTTPException(status_code=400, detail=f"Admin ID '{new_id}' is already taken by a team admin.")
 
-    creds = save_owner_credentials(new_admin_id=new_id, new_password=new_pwd)
-
-    # Sync with DB if an OWNER record exists
-    owner_db = db.query(Admin).filter(Admin.role == "OWNER").first()
-    if owner_db:
-        if new_id:
-            owner_db.admin_user_id = new_id
-        if new_pwd:
-            owner_db.password_hash = hash_password(new_pwd)
-        db.commit()
+    # Save to database and runtime configuration
+    creds = save_owner_credentials(new_admin_id=new_id, new_password=new_pwd, db=db)
 
     return {
         "status": "success",
@@ -165,17 +157,21 @@ def create_admin(
     while next_id in existing_ids:
         next_id += 1
 
-    new_admin = Admin(
-        id=next_id,
-        name=clean_name,
-        admin_user_id=clean_id,
-        password_hash=pwd_hash,
-        role="ADMIN",
-        is_active=1
-    )
-    db.add(new_admin)
-    db.commit()
-    db.refresh(new_admin)
+    try:
+        new_admin = Admin(
+            id=next_id,
+            name=clean_name,
+            admin_user_id=clean_id,
+            password_hash=pwd_hash,
+            role="ADMIN",
+            is_active=1
+        )
+        db.add(new_admin)
+        db.commit()
+        db.refresh(new_admin)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to create admin: {str(e)}")
 
     return {
         "status": "success",
@@ -210,7 +206,7 @@ def update_admin_user_id(
     if not new_id:
         raise HTTPException(status_code=400, detail="New Admin User ID cannot be empty.")
 
-    if new_id.lower() == get_owner_admin_id().lower():
+    if new_id.lower() == get_owner_admin_id(db=db).lower():
         raise HTTPException(status_code=400, detail="Cannot assign the Owner / Super Admin identifier.")
 
     # Verify uniqueness
@@ -222,9 +218,13 @@ def update_admin_user_id(
         raise HTTPException(status_code=400, detail=f"Admin User ID '{new_id}' is already in use.")
 
     old_id = admin.admin_user_id
-    admin.admin_user_id = new_id
-    db.commit()
-    db.refresh(admin)
+    try:
+        admin.admin_user_id = new_id
+        db.commit()
+        db.refresh(admin)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to update Admin ID: {str(e)}")
 
     return {
         "status": "success",
@@ -252,8 +252,12 @@ def update_admin_password(
     if len(new_pwd) < 4:
         raise HTTPException(status_code=400, detail="Password must be at least 4 characters long.")
 
-    admin.password_hash = hash_password(new_pwd)
-    db.commit()
+    try:
+        admin.password_hash = hash_password(new_pwd)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to update Admin password: {str(e)}")
 
     return {
         "status": "success",
@@ -277,9 +281,13 @@ def update_admin_status(
     if not admin:
         raise HTTPException(status_code=404, detail="Admin account not found.")
 
-    admin.is_active = 1 if payload.is_active in [1, True, "1", "true", "True"] else 0
-    db.commit()
-    db.refresh(admin)
+    try:
+        admin.is_active = 1 if payload.is_active in [1, True, "1", "true", "True"] else 0
+        db.commit()
+        db.refresh(admin)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to update Admin status: {str(e)}")
 
     status_str = "Enabled" if admin.is_active == 1 else "Disabled"
     return {
@@ -300,24 +308,18 @@ def delete_admin(
     Owner only: Deletes/revokes an Admin account.
     Does NOT affect any farmer, buyer, supply, or order data.
     """
-    admin = db.query(Admin).filter(Admin.id == admin_id).first()
+    admin = db.query(Admin).filter(Admin.id == admin_id, Admin.role == "ADMIN").first()
     if not admin:
         raise HTTPException(status_code=404, detail="Admin account not found.")
 
     admin_name = admin.name
     admin_uid = admin.admin_user_id
-    db.delete(admin)
-    db.commit()
-
-    # Re-sequence remaining team admins so IDs remain compact 1..N without gaps
-    remaining = db.query(Admin).filter(Admin.role == "ADMIN").order_by(Admin.id.asc()).all()
-    needs_commit = False
-    for target_id, a in enumerate(remaining, start=1):
-        if a.id != target_id:
-            a.id = target_id
-            needs_commit = True
-    if needs_commit:
+    try:
+        db.delete(admin)
         db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to delete Admin account: {str(e)}")
 
     return {
         "status": "success",
@@ -331,36 +333,40 @@ def delete_admin(
 
 def _wipe_platform_operational_data(db: Session):
     """Wipes all operational farmer, buyer, supply, demand, and order data leaving platform 100% clean."""
-    db.query(OrderItem).delete()
-    db.query(Order).delete()
-    db.query(Demand).delete()
-    db.query(DemandHistory).delete()
-    db.query(Supply).delete()
-    db.query(Farmer).delete()
-    db.query(Buyer).delete()
+    try:
+        db.query(OrderItem).delete()
+        db.query(Order).delete()
+        db.query(Demand).delete()
+        db.query(DemandHistory).delete()
+        db.query(Supply).delete()
+        db.query(Farmer).delete()
+        db.query(Buyer).delete()
 
-    # Reset SQLite autoincrement sequences so clean databases restart IDs from 1
-    if IS_SQLITE:
-        try:
-            from sqlalchemy import text
-            db.execute(text("DELETE FROM sqlite_sequence WHERE name IN ('farmers', 'buyers', 'supplies', 'orders', 'order_items', 'demands')"))
-        except Exception:
-            pass
+        # Reset SQLite autoincrement sequences so clean databases restart IDs from 1
+        if IS_SQLITE:
+            try:
+                from sqlalchemy import text
+                db.execute(text("DELETE FROM sqlite_sequence WHERE name IN ('farmers', 'buyers', 'supplies', 'orders', 'order_items', 'demands', 'demand_history')"))
+            except Exception:
+                pass
 
-    # Ensure baseline agricultural commodities exist so price intelligence works
-    existing_prods = db.query(Product).count()
-    if existing_prods == 0:
-        products_data = [
-            {"name": "Tomato", "category": "Vegetable", "unit": "kg", "mandi_benchmark_price": 22.0, "perishability_days": 7},
-            {"name": "Potato (Jyoti)", "category": "Tuber", "unit": "kg", "mandi_benchmark_price": 16.5, "perishability_days": 45},
-            {"name": "Red Onion", "category": "Allium", "unit": "kg", "mandi_benchmark_price": 28.0, "perishability_days": 25},
-            {"name": "Green Chilli", "category": "Spice", "unit": "kg", "mandi_benchmark_price": 54.0, "perishability_days": 10},
-            {"name": "Cauliflower", "category": "Vegetable", "unit": "kg", "mandi_benchmark_price": 18.0, "perishability_days": 8},
-        ]
-        for pdata in products_data:
-            p = Product(**pdata)
-            db.add(p)
-    db.commit()
+        # Ensure baseline agricultural commodities exist so price intelligence works
+        existing_prods = db.query(Product).count()
+        if existing_prods == 0:
+            products_data = [
+                {"name": "Tomato", "category": "Vegetable", "unit": "kg", "mandi_benchmark_price": 22.0, "perishability_days": 7},
+                {"name": "Potato (Jyoti)", "category": "Tuber", "unit": "kg", "mandi_benchmark_price": 16.5, "perishability_days": 45},
+                {"name": "Red Onion", "category": "Allium", "unit": "kg", "mandi_benchmark_price": 28.0, "perishability_days": 25},
+                {"name": "Green Chilli", "category": "Spice", "unit": "kg", "mandi_benchmark_price": 54.0, "perishability_days": 10},
+                {"name": "Cauliflower", "category": "Vegetable", "unit": "kg", "mandi_benchmark_price": 18.0, "perishability_days": 8},
+            ]
+            for pdata in products_data:
+                p = Product(**pdata)
+                db.add(p)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Database wipe failed: {str(e)}")
 
 
 @router.post("/reset-demo-data", response_model=Dict[str, Any])
@@ -448,8 +454,12 @@ def update_admin_farmer(
         farmer.pincode = payload.pincode.strip()
 
     farmer.location = f"{farmer.address or 'Farm Gate'}, {farmer.state or 'West Bengal'} ({farmer.pincode or ''})"
-    db.commit()
-    db.refresh(farmer)
+    try:
+        db.commit()
+        db.refresh(farmer)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to update farmer: {str(e)}")
 
     return {
         "status": "success",
@@ -481,11 +491,15 @@ def delete_admin_farmer(
         raise HTTPException(status_code=404, detail="Farmer not found.")
 
     f_name = farmer.name
-    # Delete associated supplies and order_items
-    db.query(Supply).filter(Supply.farmer_id == farmer_id).delete()
-    db.query(OrderItem).filter(OrderItem.farmer_id == farmer_id).delete()
-    db.delete(farmer)
-    db.commit()
+    try:
+        # Delete associated supplies and order_items
+        db.query(Supply).filter(Supply.farmer_id == farmer_id).delete()
+        db.query(OrderItem).filter(OrderItem.farmer_id == farmer_id).delete()
+        db.delete(farmer)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to delete farmer: {str(e)}")
 
     return {
         "status": "success",
@@ -531,8 +545,12 @@ def update_admin_buyer(
     if payload.pincode is not None and payload.pincode.strip():
         buyer.pincode = payload.pincode.strip()
 
-    db.commit()
-    db.refresh(buyer)
+    try:
+        db.commit()
+        db.refresh(buyer)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to update buyer: {str(e)}")
 
     return {
         "status": "success",
@@ -564,10 +582,19 @@ def delete_admin_buyer(
         raise HTTPException(status_code=404, detail="Buyer not found.")
 
     b_name = buyer.name
-    # Clean associated demands
-    db.query(Demand).filter(Demand.buyer_name == b_name).delete()
-    db.delete(buyer)
-    db.commit()
+    try:
+        # Clean associated demands
+        db.query(Demand).filter(Demand.buyer_name == b_name).delete()
+        # Clean associated orders and items
+        buyer_orders = db.query(Order).filter(Order.buyer_name == b_name).all()
+        for o in buyer_orders:
+            db.query(OrderItem).filter(OrderItem.order_id == o.id).delete()
+            db.delete(o)
+        db.delete(buyer)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to delete buyer: {str(e)}")
 
     return {
         "status": "success",

@@ -218,43 +218,47 @@ def fulfill_order(payload: OrderCreateRequest, db: Session = Depends(get_db)):
     logistics_cost = round(route_dist * 18.0, 2)
     grand_total = round(procurement_cost + logistics_cost, 2)
 
-    new_order = Order(
-        order_number=order_num,
-        buyer_name=payload.buyer_name,
-        product_id=payload.product_id,
-        total_quantity=payload.total_quantity,
-        agreed_price_per_kg=blended_rate,
-        total_procurement_cost=procurement_cost,
-        estimated_distance_km=route_dist,
-        logistics_cost=logistics_cost,
-        status="CONFIRMED",
-        collection_route_json=json.dumps(payload.route_summary) if payload.route_summary else "{}",
-        created_at=datetime.now()
-    )
-    db.add(new_order)
-    db.commit()
-    db.refresh(new_order)
-
-    for item_data in farmer_item_details:
-        item = OrderItem(
-            order_id=new_order.id,
-            farmer_id=item_data["farmer_id"],
-            allocated_quantity=item_data["quantity_kg"],
-            price_per_kg=item_data["price_per_kg"],
-            subtotal=item_data["subtotal"]
+    try:
+        new_order = Order(
+            order_number=order_num,
+            buyer_name=payload.buyer_name,
+            product_id=payload.product_id,
+            total_quantity=payload.total_quantity,
+            agreed_price_per_kg=blended_rate,
+            total_procurement_cost=procurement_cost,
+            estimated_distance_km=route_dist,
+            logistics_cost=logistics_cost,
+            status="CONFIRMED",
+            collection_route_json=json.dumps(payload.route_summary) if payload.route_summary else "{}",
+            created_at=datetime.now()
         )
-        db.add(item)
+        db.add(new_order)
+        db.commit()
+        db.refresh(new_order)
 
-        # Update available supply quantity and quantity ordered
-        supply_record = db.query(Supply).filter(
-            Supply.farmer_id == item_data["farmer_id"],
-            Supply.product_id == payload.product_id
-        ).first()
-        if supply_record:
-            supply_record.quantity = max(0.0, supply_record.quantity - item_data["quantity_kg"])
-            supply_record.cleared_quantity = (supply_record.cleared_quantity or 0.0) + item_data["quantity_kg"]
+        for item_data in farmer_item_details:
+            item = OrderItem(
+                order_id=new_order.id,
+                farmer_id=item_data["farmer_id"],
+                allocated_quantity=item_data["quantity_kg"],
+                price_per_kg=item_data["price_per_kg"],
+                subtotal=item_data["subtotal"]
+            )
+            db.add(item)
 
-    db.commit()
+            # Update available supply quantity and quantity ordered
+            supply_record = db.query(Supply).filter(
+                Supply.farmer_id == item_data["farmer_id"],
+                Supply.product_id == payload.product_id
+            ).first()
+            if supply_record:
+                supply_record.quantity = max(0.0, supply_record.quantity - item_data["quantity_kg"])
+                supply_record.cleared_quantity = (supply_record.cleared_quantity or 0.0) + item_data["quantity_kg"]
+
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to record confirmed order: {str(e)}")
 
     time_now_ampm = datetime.now().strftime("%I:%M %p")
     tracking = [
@@ -405,21 +409,25 @@ def cancel_order(order_id: int, db: Session = Depends(get_db)):
     if order.status == "CANCELLED":
         raise HTTPException(status_code=400, detail="Order is already cancelled")
 
-    # Restore quantities to supplies
-    items = db.query(OrderItem).filter(OrderItem.order_id == order.id).all()
     restored_kg = 0.0
-    for itm in items:
-        supply = db.query(Supply).filter(
-            Supply.farmer_id == itm.farmer_id,
-            Supply.product_id == order.product_id
-        ).first()
-        if supply:
-            supply.quantity += itm.allocated_quantity
-            supply.cleared_quantity = max(0.0, (supply.cleared_quantity or 0.0) - itm.allocated_quantity)
-            restored_kg += itm.allocated_quantity
+    try:
+        # Restore quantities to supplies
+        items = db.query(OrderItem).filter(OrderItem.order_id == order.id).all()
+        for itm in items:
+            supply = db.query(Supply).filter(
+                Supply.farmer_id == itm.farmer_id,
+                Supply.product_id == order.product_id
+            ).first()
+            if supply:
+                supply.quantity += itm.allocated_quantity
+                supply.cleared_quantity = max(0.0, (supply.cleared_quantity or 0.0) - itm.allocated_quantity)
+                restored_kg += itm.allocated_quantity
 
-    order.status = "CANCELLED"
-    db.commit()
+        order.status = "CANCELLED"
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to cancel order: {str(e)}")
 
     return {
         "status": "success",
@@ -450,9 +458,14 @@ def platform_stats(db: Session = Depends(get_db)):
 @router.delete("/orders")
 def clear_all_orders(db: Session = Depends(get_db)):
     """Clear all procurement order history to keep the dashboard tidy."""
-    db.query(OrderItem).delete()
-    del_count = db.query(Order).delete()
-    db.commit()
+    try:
+        db.query(OrderItem).delete()
+        del_count = db.query(Order).delete()
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to clear orders: {str(e)}")
+
     return {
         "status": "success",
         "message": f"Successfully cleared {del_count} order(s) from platform history.",
@@ -468,9 +481,14 @@ def delete_single_order(order_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Order not found")
 
     num = order.order_number
-    db.query(OrderItem).filter(OrderItem.order_id == order.id).delete()
-    db.delete(order)
-    db.commit()
+    try:
+        db.query(OrderItem).filter(OrderItem.order_id == order.id).delete()
+        db.delete(order)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to delete order: {str(e)}")
+
     return {
         "status": "success",
         "message": f"Order #{num} removed from history."

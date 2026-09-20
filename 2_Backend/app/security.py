@@ -7,58 +7,12 @@ import time
 from typing import Optional, Dict, Any
 from fastapi import HTTPException, Header, Depends, status
 
-# Configuration from Environment Variables or persisted owner config
-OWNER_CONFIG_FILE = os.path.join(os.path.dirname(__file__), "owner_config.json")
-
-def get_owner_credentials() -> Dict[str, str]:
-    default_id = os.getenv("OWNER_ADMIN_ID", "Sm_0629")
-    default_pwd = os.getenv("OWNER_ADMIN_PASSWORD", "9973868328")
-    if os.path.exists(OWNER_CONFIG_FILE):
-        try:
-            with open(OWNER_CONFIG_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                return {
-                    "admin_user_id": data.get("admin_user_id", default_id),
-                    "password_hash": data.get("password_hash"),
-                    "password_plain": data.get("password_plain", default_pwd)
-                }
-        except Exception:
-            pass
-    return {
-        "admin_user_id": default_id,
-        "password_hash": None,
-        "password_plain": default_pwd
-    }
-
-def get_owner_admin_id() -> str:
-    return get_owner_credentials()["admin_user_id"]
-
-OWNER_ADMIN_ID = get_owner_admin_id()
-OWNER_ADMIN_PASSWORD = os.getenv("OWNER_ADMIN_PASSWORD", "9973868328")
+# Super Admin Default Fallbacks from Environment Variables
+DEFAULT_OWNER_ID = os.getenv("OWNER_ADMIN_ID", "Sm_0629")
+DEFAULT_OWNER_PWD = os.getenv("OWNER_ADMIN_PASSWORD", "9973868328")
+OWNER_ADMIN_ID = DEFAULT_OWNER_ID
+OWNER_ADMIN_PASSWORD = DEFAULT_OWNER_PWD
 SECRET_KEY = os.getenv("SECRET_KEY", "farmbuy_ai_secure_token_secret_key_2026_x89f")
-
-def save_owner_credentials(new_admin_id: Optional[str] = None, new_password: Optional[str] = None) -> Dict[str, str]:
-    global OWNER_ADMIN_ID, OWNER_ADMIN_PASSWORD
-    creds = get_owner_credentials()
-    if new_admin_id:
-        creds["admin_user_id"] = new_admin_id.strip()
-        OWNER_ADMIN_ID = creds["admin_user_id"]
-    if new_password:
-        creds["password_plain"] = new_password.strip()
-        creds["password_hash"] = hash_password(new_password.strip())
-        OWNER_ADMIN_PASSWORD = creds["password_plain"]
-    
-    with open(OWNER_CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(creds, f, indent=2)
-    return creds
-
-def verify_owner_login(user_id_input: str, password_input: str) -> bool:
-    creds = get_owner_credentials()
-    if user_id_input.strip() != creds["admin_user_id"]:
-        return False
-    if creds.get("password_hash"):
-        return verify_password(password_input, creds["password_hash"])
-    return password_input == creds.get("password_plain")
 
 TOKEN_EXPIRY_SECONDS = 86400 * 7  # 7 days session validity
 PBKDF2_ITERATIONS = 200_000
@@ -97,19 +51,101 @@ def verify_password(plain_password: str, password_hash: str) -> bool:
         return False
 
 
+def get_owner_admin_id(db=None) -> str:
+    """Get the active Super Admin User ID from the database, or fallback to environment."""
+    if db:
+        try:
+            from .models import Admin
+            owner = db.query(Admin).filter(Admin.role == "OWNER").first()
+            if owner:
+                return owner.admin_user_id
+        except Exception:
+            pass
+    return os.getenv("OWNER_ADMIN_ID", DEFAULT_OWNER_ID)
+
+
+def get_owner_credentials(db=None) -> Dict[str, Any]:
+    """Retrieve current Owner identifier and credentials info."""
+    owner_id = get_owner_admin_id(db=db)
+    return {
+        "admin_user_id": owner_id,
+        "role": "OWNER"
+    }
+
+
+def save_owner_credentials(new_admin_id: Optional[str] = None, new_password: Optional[str] = None, db=None) -> Dict[str, Any]:
+    """Save updated Owner credentials to database and runtime env."""
+    active_id = get_owner_admin_id(db=db)
+    if new_admin_id:
+        active_id = new_admin_id.strip()
+        os.environ["OWNER_ADMIN_ID"] = active_id
+    if new_password:
+        os.environ["OWNER_ADMIN_PASSWORD"] = new_password.strip()
+
+    if db:
+        try:
+            from .models import Admin
+            owner = db.query(Admin).filter(Admin.role == "OWNER").first()
+            if not owner:
+                owner = Admin(
+                    id=999,
+                    name="Super Admin (Owner)",
+                    admin_user_id=active_id,
+                    password_hash=hash_password(new_password or os.getenv("OWNER_ADMIN_PASSWORD", DEFAULT_OWNER_PWD)),
+                    role="OWNER",
+                    is_active=1
+                )
+                db.add(owner)
+            else:
+                if new_admin_id:
+                    owner.admin_user_id = active_id
+                if new_password:
+                    owner.password_hash = hash_password(new_password.strip())
+            db.commit()
+            db.refresh(owner)
+        except Exception:
+            db.rollback()
+
+    return {"admin_user_id": active_id}
+
+
+def verify_owner_login(user_id_input: str, password_input: str, db=None) -> bool:
+    """
+    Verify Super Admin (Owner) credentials.
+    Checks the persistent database first; falls back to environment variables.
+    """
+    clean_id = user_id_input.strip()
+    if db:
+        try:
+            from .models import Admin
+            owner = db.query(Admin).filter(Admin.role == "OWNER").first()
+            if owner and owner.admin_user_id == clean_id:
+                return verify_password(password_input, owner.password_hash)
+        except Exception:
+            pass
+
+    # Fallback to local session / env vars
+    fallback_id = os.getenv("OWNER_ADMIN_ID", DEFAULT_OWNER_ID)
+    fallback_pwd = os.getenv("OWNER_ADMIN_PASSWORD", DEFAULT_OWNER_PWD)
+    if clean_id == fallback_id:
+        return password_input == fallback_pwd
+
+    return False
+
+
 def create_access_token(payload: Dict[str, Any]) -> str:
     """Create a signed HMAC-SHA256 token containing user claims."""
     token_data = payload.copy()
     token_data["exp"] = int(time.time()) + TOKEN_EXPIRY_SECONDS
     raw_payload = json.dumps(token_data, separators=(',', ':'), sort_keys=True).encode('utf-8')
     payload_b64 = base64.urlsafe_b64encode(raw_payload).decode('utf-8').rstrip('=')
-    
+
     signature = hmac.new(
         SECRET_KEY.encode('utf-8'),
         payload_b64.encode('utf-8'),
         hashlib.sha256
     ).hexdigest()
-    
+
     return f"{payload_b64}.{signature}"
 
 
@@ -120,27 +156,27 @@ def decode_access_token(token: str) -> Dict[str, Any]:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing authentication token."
         )
-    
+
     parts = token.split(".", 1)
     if len(parts) != 2:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Malformed authentication token."
         )
-    
+
     payload_b64, signature = parts
     expected_sig = hmac.new(
         SECRET_KEY.encode('utf-8'),
         payload_b64.encode('utf-8'),
         hashlib.sha256
     ).hexdigest()
-    
+
     if not hmac.compare_digest(expected_sig, signature):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token signature. Access denied."
         )
-    
+
     try:
         padded = payload_b64 + '=' * (-len(payload_b64) % 4)
         raw_json = base64.urlsafe_b64decode(padded).decode('utf-8')
@@ -150,13 +186,13 @@ def decode_access_token(token: str) -> Dict[str, Any]:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Corrupted token payload."
         )
-    
+
     if claims.get("exp", 0) < int(time.time()):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication token has expired. Please login again."
         )
-    
+
     return claims
 
 
@@ -167,14 +203,14 @@ def get_current_user_payload(authorization: Optional[str] = Header(None)) -> Dic
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authorization header missing. Please provide a valid Bearer token."
         )
-    
+
     parts = authorization.strip().split(" ")
     if len(parts) != 2 or parts[0].lower() != "bearer":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authorization header format must be 'Bearer <token>'."
         )
-    
+
     return decode_access_token(parts[1])
 
 

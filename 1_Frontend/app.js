@@ -1,14 +1,15 @@
 // Dynamically resolve Backend API Base URL:
 // - Cloud/Production (Render) or local uvicorn: use same origin (window.location.origin)
-// - VS Code Live Server (port 5500) or file://: point to local backend (http://127.0.0.1:8000)
-const isLiveServer = window.location.port === "5500";
-const isFileProtocol = window.location.protocol === "file:" || window.location.origin === "null";
-
-const API_BASE =
-    window.location.hostname === "localhost" ||
-    window.location.hostname === "127.0.0.1"
-        ? "http://127.0.0.1:8000"
-        : window.location.origin;
+// - VS Code Live Server (port 5500) or file://: point to local backend (http://127.0.0.1:8000) or deployed backend
+const API_BASE = (() => {
+    if (window.location.protocol === "file:" || window.location.origin === "null" || !window.location.origin) {
+        return "https://farmbuy-ai-backend.onrender.com";
+    }
+    if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+        return window.location.port === "8000" ? window.location.origin : "http://127.0.0.1:8000";
+    }
+    return window.location.origin;
+})();
 
 let state = {
     products: [],
@@ -1961,13 +1962,15 @@ async function checkBackendStatus() {
         const res = await fetch(`${API_BASE}/health`);
         const data = await res.json();
         if (data.status === "healthy") {
-            statusText.textContent = `Backend Connected (v${data.version || "2.0"})`;
-            statusPulse.style.background = "#22c55e";
+            state.databaseInfo = data.database;
+            const storageBadge = data.database?.is_persistent ? "🟢 PostgreSQL (Persistent)" : "💾 Local Database";
+            if (statusText) statusText.textContent = `Backend Connected (v${data.version || "2.0"}) • ${storageBadge}`;
+            if (statusPulse) statusPulse.style.background = "#22c55e";
         }
     } catch (err) {
-        console.warn("Backend not yet reachable on 8000:", err);
-        statusText.textContent = "Backend Offline";
-        statusPulse.style.background = "#ef4444";
+        console.warn("Backend not yet reachable:", err);
+        if (statusText) statusText.textContent = "Backend Offline";
+        if (statusPulse) statusPulse.style.background = "#ef4444";
     }
 }
 

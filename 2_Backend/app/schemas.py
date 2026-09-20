@@ -132,6 +132,23 @@ class AdminOut(BaseModel):
         from_attributes = True
 
 
+class FarmerUpdateRequest(BaseModel):
+    name: Optional[str] = Field(None, min_length=2, description="Farmer full name")
+    phone_number: Optional[str] = Field(None, min_length=6, description="Contact phone number")
+    address: Optional[str] = Field(None, min_length=2, description="Village or address")
+    state: Optional[str] = Field(None, min_length=2, description="State")
+    pincode: Optional[str] = Field(None, min_length=4, description="Postal pincode")
+
+
+class BuyerUpdateRequest(BaseModel):
+    name: Optional[str] = Field(None, min_length=2, description="Buyer or enterprise name")
+    phone_number: Optional[str] = Field(None, min_length=6, description="Contact phone number")
+    address: Optional[str] = Field(None, min_length=2, description="Depot or warehouse address")
+    city: Optional[str] = Field(None, description="City name")
+    state: Optional[str] = Field(None, min_length=2, description="State")
+    pincode: Optional[str] = Field(None, min_length=4, description="Postal pincode")
+
+
 class DemoResetRequest(BaseModel):
     confirm: bool = Field(..., description="Confirmation flag to proceed with demo data reset")
 

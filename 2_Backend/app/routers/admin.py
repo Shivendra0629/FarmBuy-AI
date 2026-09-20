@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional
 from datetime import date, datetime, timedelta
 import random
 
-from ..database import get_db
+from ..database import get_db, IS_SQLITE
 from ..models import Admin, Farmer, Buyer, Product, Supply, Order, OrderItem, Demand, DemandHistory
 from ..schemas import (
     AdminOut,
@@ -15,7 +15,9 @@ from ..schemas import (
     OwnerUpdateCredentialsRequest,
     DemoResetRequest,
     FarmerOut,
+    FarmerUpdateRequest,
     BuyerOut,
+    BuyerUpdateRequest,
     SupplyOut
 )
 from ..security import (
@@ -337,6 +339,14 @@ def _wipe_platform_operational_data(db: Session):
     db.query(Farmer).delete()
     db.query(Buyer).delete()
 
+    # Reset SQLite autoincrement sequences so clean databases restart IDs from 1
+    if IS_SQLITE:
+        try:
+            from sqlalchemy import text
+            db.execute(text("DELETE FROM sqlite_sequence WHERE name IN ('farmers', 'buyers', 'supplies', 'orders', 'order_items', 'demands')"))
+        except Exception:
+            pass
+
     # Ensure baseline agricultural commodities exist so price intelligence works
     existing_prods = db.query(Product).count()
     if existing_prods == 0:
@@ -410,6 +420,79 @@ def get_admin_farmers(
     return results
 
 
+@router.put("/farmers/{farmer_id}", response_model=Dict[str, Any])
+@router.patch("/farmers/{farmer_id}", response_model=Dict[str, Any])
+def update_admin_farmer(
+    farmer_id: int,
+    payload: FarmerUpdateRequest,
+    db: Session = Depends(get_db),
+    claims: Dict[str, Any] = Depends(require_admin)
+):
+    """
+    Admin & Owner: Modifies details of a registered farmer.
+    Both regular Admin and Super Admin (Owner) are fully authorized.
+    """
+    farmer = db.query(Farmer).filter(Farmer.id == farmer_id).first()
+    if not farmer:
+        raise HTTPException(status_code=404, detail="Farmer not found.")
+
+    if payload.name is not None and payload.name.strip():
+        farmer.name = payload.name.strip()
+    if payload.phone_number is not None and payload.phone_number.strip():
+        farmer.contact = payload.phone_number.strip()
+    if payload.address is not None and payload.address.strip():
+        farmer.address = payload.address.strip()
+    if payload.state is not None and payload.state.strip():
+        farmer.state = payload.state.strip()
+    if payload.pincode is not None and payload.pincode.strip():
+        farmer.pincode = payload.pincode.strip()
+
+    farmer.location = f"{farmer.address or 'Farm Gate'}, {farmer.state or 'West Bengal'} ({farmer.pincode or ''})"
+    db.commit()
+    db.refresh(farmer)
+
+    return {
+        "status": "success",
+        "message": f"Farmer #{farmer.id} ({farmer.name}) updated successfully.",
+        "farmer": {
+            "id": farmer.id,
+            "name": farmer.name,
+            "phone_number": farmer.contact,
+            "address": farmer.address,
+            "state": farmer.state,
+            "pincode": farmer.pincode,
+            "location": farmer.location
+        }
+    }
+
+
+@router.delete("/farmers/{farmer_id}", response_model=Dict[str, Any])
+def delete_admin_farmer(
+    farmer_id: int,
+    db: Session = Depends(get_db),
+    claims: Dict[str, Any] = Depends(require_admin)
+):
+    """
+    Admin & Owner: Removes a farmer and their listed supplies from the platform.
+    Both regular Admin and Super Admin (Owner) are fully authorized.
+    """
+    farmer = db.query(Farmer).filter(Farmer.id == farmer_id).first()
+    if not farmer:
+        raise HTTPException(status_code=404, detail="Farmer not found.")
+
+    f_name = farmer.name
+    # Delete associated supplies and order_items
+    db.query(Supply).filter(Supply.farmer_id == farmer_id).delete()
+    db.query(OrderItem).filter(OrderItem.farmer_id == farmer_id).delete()
+    db.delete(farmer)
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Farmer '{f_name}' (ID: #{farmer_id}) and produce listings removed successfully."
+    }
+
+
 @router.get("/buyers", response_model=List[BuyerOut])
 def get_admin_buyers(
     db: Session = Depends(get_db),
@@ -417,6 +500,79 @@ def get_admin_buyers(
 ):
     """Admin & Owner: Lists all registered buyers and wholesale enterprises."""
     return db.query(Buyer).order_by(Buyer.created_at.desc()).all()
+
+
+@router.put("/buyers/{buyer_id}", response_model=Dict[str, Any])
+@router.patch("/buyers/{buyer_id}", response_model=Dict[str, Any])
+def update_admin_buyer(
+    buyer_id: int,
+    payload: BuyerUpdateRequest,
+    db: Session = Depends(get_db),
+    claims: Dict[str, Any] = Depends(require_admin)
+):
+    """
+    Admin & Owner: Modifies details of a registered wholesale buyer.
+    Both regular Admin and Super Admin (Owner) are fully authorized.
+    """
+    buyer = db.query(Buyer).filter(Buyer.id == buyer_id).first()
+    if not buyer:
+        raise HTTPException(status_code=404, detail="Buyer not found.")
+
+    if payload.name is not None and payload.name.strip():
+        buyer.name = payload.name.strip()
+    if payload.phone_number is not None and payload.phone_number.strip():
+        buyer.phone_number = payload.phone_number.strip()
+    if payload.address is not None and payload.address.strip():
+        buyer.address = payload.address.strip()
+    if payload.city is not None:
+        buyer.city = payload.city.strip()
+    if payload.state is not None and payload.state.strip():
+        buyer.state = payload.state.strip()
+    if payload.pincode is not None and payload.pincode.strip():
+        buyer.pincode = payload.pincode.strip()
+
+    db.commit()
+    db.refresh(buyer)
+
+    return {
+        "status": "success",
+        "message": f"Buyer #{buyer.id} ({buyer.name}) updated successfully.",
+        "buyer": {
+            "id": buyer.id,
+            "name": buyer.name,
+            "phone_number": buyer.phone_number,
+            "address": buyer.address,
+            "city": buyer.city,
+            "state": buyer.state,
+            "pincode": buyer.pincode
+        }
+    }
+
+
+@router.delete("/buyers/{buyer_id}", response_model=Dict[str, Any])
+def delete_admin_buyer(
+    buyer_id: int,
+    db: Session = Depends(get_db),
+    claims: Dict[str, Any] = Depends(require_admin)
+):
+    """
+    Admin & Owner: Removes a wholesale buyer from the platform.
+    Both regular Admin and Super Admin (Owner) are fully authorized.
+    """
+    buyer = db.query(Buyer).filter(Buyer.id == buyer_id).first()
+    if not buyer:
+        raise HTTPException(status_code=404, detail="Buyer not found.")
+
+    b_name = buyer.name
+    # Clean associated demands
+    db.query(Demand).filter(Demand.buyer_name == b_name).delete()
+    db.delete(buyer)
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Buyer '{b_name}' (ID: #{buyer_id}) removed successfully."
+    }
 
 
 @router.get("/supplies")

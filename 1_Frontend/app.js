@@ -750,11 +750,15 @@ async function loadAdminOverview() {
     }
 }
 
+// Cache for Admin Farmers and Buyers data
+window.__adminFarmersCache = {};
+window.__adminBuyersCache = {};
+
 // 2. Load Farmers Directory
 async function loadAdminFarmers() {
     const tbody = document.getElementById("adminFarmersTableBody");
     if (!tbody) return;
-    tbody.innerHTML = `<tr><td colspan="6" class="text-muted text-center py-3">Loading farmers directory...</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="text-muted text-center py-3">Loading farmers directory...</td></tr>`;
 
     try {
         const res = await authFetch(`${API_BASE}/api/admin/farmers`);
@@ -762,11 +766,13 @@ async function loadAdminFarmers() {
         const farmers = await res.json();
 
         if (!farmers || farmers.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6" class="text-muted text-center py-3">No farmers registered yet.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" class="text-muted text-center py-3">No farmers registered yet.</td></tr>`;
             return;
         }
 
+        window.__adminFarmersCache = {};
         tbody.innerHTML = farmers.map(f => {
+            window.__adminFarmersCache[f.id] = f;
             const phone = f.phone_number || f.contact || "N/A";
             return `
                 <tr>
@@ -776,12 +782,111 @@ async function loadAdminFarmers() {
                     <td>${escapeHtml(f.address || f.location || "Farm Gate")}</td>
                     <td>${escapeHtml(f.state || "N/A")}</td>
                     <td><code>${escapeHtml(f.pincode || "N/A")}</code></td>
+                    <td style="text-align:center;">
+                        <div style="display:flex; gap:6px; justify-content:center; flex-wrap:wrap;">
+                            <button type="button" class="admin-action-btn" onclick="openEditFarmerModal(${f.id})" title="Edit Farmer Details">✏️ Edit</button>
+                            <button type="button" class="admin-action-btn delete" onclick="deleteFarmerRecord(${f.id})" title="Delete Farmer">🗑️ Delete</button>
+                        </div>
+                    </td>
                 </tr>
             `;
         }).join("");
     } catch (err) {
         console.error("Farmers load error:", err);
-        tbody.innerHTML = `<tr><td colspan="6" class="text-danger text-center py-3">Error loading farmers: ${err.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" class="text-danger text-center py-3">Error loading farmers: ${err.message}</td></tr>`;
+    }
+}
+
+// 2b. Admin: Edit Farmer Modal Controls & Handlers
+function openEditFarmerModal(farmerId) {
+    const f = window.__adminFarmersCache[farmerId];
+    if (!f) return;
+    const modal = document.getElementById("adminEditFarmerModal");
+    const idInput = document.getElementById("editFarmerId");
+    const nameInput = document.getElementById("editFarmerNameInput");
+    const phoneInput = document.getElementById("editFarmerPhoneInput");
+    const addrInput = document.getElementById("editFarmerAddressInput");
+    const stateInput = document.getElementById("editFarmerStateInput");
+    const pinInput = document.getElementById("editFarmerPincodeInput");
+
+    if (idInput) idInput.value = f.id;
+    if (nameInput) nameInput.value = f.name || "";
+    if (phoneInput) phoneInput.value = f.phone_number || f.contact || "";
+    if (addrInput) addrInput.value = f.address || "";
+    if (stateInput) stateInput.value = f.state || "West Bengal";
+    if (pinInput) pinInput.value = f.pincode || "";
+
+    if (modal) modal.style.display = "flex";
+}
+
+function closeEditFarmerModal() {
+    const modal = document.getElementById("adminEditFarmerModal");
+    if (modal) modal.style.display = "none";
+}
+
+async function handleEditFarmerSubmit(event) {
+    if (event) event.preventDefault();
+    const btn = document.getElementById("saveEditFarmerBtn");
+    const originalText = btn ? btn.innerHTML : "💾 Update Farmer";
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span>⏳ Saving...</span>`;
+    }
+
+    const farmerId = document.getElementById("editFarmerId").value;
+    const payload = {
+        name: document.getElementById("editFarmerNameInput").value.trim(),
+        phone_number: document.getElementById("editFarmerPhoneInput").value.trim(),
+        address: document.getElementById("editFarmerAddressInput").value.trim(),
+        state: document.getElementById("editFarmerStateInput").value.trim(),
+        pincode: document.getElementById("editFarmerPincodeInput").value.trim()
+    };
+
+    try {
+        const res = await authFetch(`${API_BASE}/api/admin/farmers/${farmerId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Failed to update farmer.");
+
+        closeEditFarmerModal();
+        showToast(data.message || `🌾 Farmer #${farmerId} updated successfully.`, "success");
+        loadAdminFarmers();
+        loadAdminOverview();
+    } catch (err) {
+        console.error("Edit farmer error:", err);
+        showToast(`⚠️ ${err.message}`, "error");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+}
+
+async function deleteFarmerRecord(farmerId) {
+    const f = window.__adminFarmersCache[farmerId] || {};
+    const name = f.name || `#${farmerId}`;
+    if (!confirm(`Are you sure you want to permanently delete Farmer "${name}" (ID: #${farmerId}) and all their listed produce?\n\nBoth Admins and Super Admins have permission to perform this action.`)) {
+        return;
+    }
+
+    try {
+        const res = await authFetch(`${API_BASE}/api/admin/farmers/${farmerId}`, {
+            method: "DELETE"
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Failed to delete farmer.");
+
+        showToast(data.message || `🗑️ Farmer #${farmerId} deleted successfully.`, "success");
+        loadAdminFarmers();
+        loadAdminSupplies();
+        loadAdminOverview();
+    } catch (err) {
+        console.error("Delete farmer error:", err);
+        showToast(`⚠️ ${err.message}`, "error");
     }
 }
 
@@ -789,7 +894,7 @@ async function loadAdminFarmers() {
 async function loadAdminBuyers() {
     const tbody = document.getElementById("adminBuyersTableBody");
     if (!tbody) return;
-    tbody.innerHTML = `<tr><td colspan="8" class="text-muted text-center py-3">Loading buyers directory...</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="text-muted text-center py-3">Loading buyers directory...</td></tr>`;
 
     try {
         const res = await authFetch(`${API_BASE}/api/admin/buyers`);
@@ -797,25 +902,130 @@ async function loadAdminBuyers() {
         const buyers = await res.json();
 
         if (!buyers || buyers.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="8" class="text-muted text-center py-3">No buyers registered yet.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="9" class="text-muted text-center py-3">No buyers registered yet.</td></tr>`;
             return;
         }
 
-        tbody.innerHTML = buyers.map(b => `
-            <tr>
-                <td><strong>#${b.id}</strong></td>
-                <td style="font-weight:700; color:#1e293b;">${escapeHtml(b.name)}</td>
-                <td>📞 ${escapeHtml(b.phone_number || "N/A")}</td>
-                <td>${escapeHtml(b.address || "Central Depot")}</td>
-                <td>${escapeHtml(b.city || "N/A")}</td>
-                <td>${escapeHtml(b.state || "N/A")}</td>
-                <td><code>${escapeHtml(b.pincode || "N/A")}</code></td>
-                <td style="font-size:12px; color:#64748b;">${b.created_at ? new Date(b.created_at).toLocaleDateString() : "—"}</td>
-            </tr>
-        `).join("");
+        window.__adminBuyersCache = {};
+        tbody.innerHTML = buyers.map(b => {
+            window.__adminBuyersCache[b.id] = b;
+            return `
+                <tr>
+                    <td><strong>#${b.id}</strong></td>
+                    <td style="font-weight:700; color:#1e293b;">${escapeHtml(b.name)}</td>
+                    <td>📞 ${escapeHtml(b.phone_number || "N/A")}</td>
+                    <td>${escapeHtml(b.address || "Central Depot")}</td>
+                    <td>${escapeHtml(b.city || "N/A")}</td>
+                    <td>${escapeHtml(b.state || "N/A")}</td>
+                    <td><code>${escapeHtml(b.pincode || "N/A")}</code></td>
+                    <td style="font-size:12px; color:#64748b;">${b.created_at ? new Date(b.created_at).toLocaleDateString() : "—"}</td>
+                    <td style="text-align:center;">
+                        <div style="display:flex; gap:6px; justify-content:center; flex-wrap:wrap;">
+                            <button type="button" class="admin-action-btn" onclick="openEditBuyerModal(${b.id})" title="Edit Buyer Details">✏️ Edit</button>
+                            <button type="button" class="admin-action-btn delete" onclick="deleteBuyerRecord(${b.id})" title="Delete Buyer">🗑️ Delete</button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join("");
     } catch (err) {
         console.error("Buyers load error:", err);
-        tbody.innerHTML = `<tr><td colspan="8" class="text-danger text-center py-3">Error loading buyers: ${err.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" class="text-danger text-center py-3">Error loading buyers: ${err.message}</td></tr>`;
+    }
+}
+
+// 3b. Admin: Edit Buyer Modal Controls & Handlers
+function openEditBuyerModal(buyerId) {
+    const b = window.__adminBuyersCache[buyerId];
+    if (!b) return;
+    const modal = document.getElementById("adminEditBuyerModal");
+    const idInput = document.getElementById("editBuyerId");
+    const nameInput = document.getElementById("editBuyerNameInput");
+    const phoneInput = document.getElementById("editBuyerPhoneInput");
+    const addrInput = document.getElementById("editBuyerAddressInput");
+    const cityInput = document.getElementById("editBuyerCityInput");
+    const stateInput = document.getElementById("editBuyerStateInput");
+    const pinInput = document.getElementById("editBuyerPincodeInput");
+
+    if (idInput) idInput.value = b.id;
+    if (nameInput) nameInput.value = b.name || "";
+    if (phoneInput) phoneInput.value = b.phone_number || "";
+    if (addrInput) addrInput.value = b.address || "";
+    if (cityInput) cityInput.value = b.city || "";
+    if (stateInput) stateInput.value = b.state || "West Bengal";
+    if (pinInput) pinInput.value = b.pincode || "";
+
+    if (modal) modal.style.display = "flex";
+}
+
+function closeEditBuyerModal() {
+    const modal = document.getElementById("adminEditBuyerModal");
+    if (modal) modal.style.display = "none";
+}
+
+async function handleEditBuyerSubmit(event) {
+    if (event) event.preventDefault();
+    const btn = document.getElementById("saveEditBuyerBtn");
+    const originalText = btn ? btn.innerHTML : "💾 Update Buyer";
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span>⏳ Saving...</span>`;
+    }
+
+    const buyerId = document.getElementById("editBuyerId").value;
+    const payload = {
+        name: document.getElementById("editBuyerNameInput").value.trim(),
+        phone_number: document.getElementById("editBuyerPhoneInput").value.trim(),
+        address: document.getElementById("editBuyerAddressInput").value.trim(),
+        city: document.getElementById("editBuyerCityInput").value.trim(),
+        state: document.getElementById("editBuyerStateInput").value.trim(),
+        pincode: document.getElementById("editBuyerPincodeInput").value.trim()
+    };
+
+    try {
+        const res = await authFetch(`${API_BASE}/api/admin/buyers/${buyerId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Failed to update buyer.");
+
+        closeEditBuyerModal();
+        showToast(data.message || `🏢 Buyer #${buyerId} updated successfully.`, "success");
+        loadAdminBuyers();
+        loadAdminOverview();
+    } catch (err) {
+        console.error("Edit buyer error:", err);
+        showToast(`⚠️ ${err.message}`, "error");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+}
+
+async function deleteBuyerRecord(buyerId) {
+    const b = window.__adminBuyersCache[buyerId] || {};
+    const name = b.name || `#${buyerId}`;
+    if (!confirm(`Are you sure you want to permanently delete Buyer "${name}" (ID: #${buyerId})?\n\nBoth Admins and Super Admins have permission to perform this action.`)) {
+        return;
+    }
+
+    try {
+        const res = await authFetch(`${API_BASE}/api/admin/buyers/${buyerId}`, {
+            method: "DELETE"
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "Failed to delete buyer.");
+
+        showToast(data.message || `🗑️ Buyer #${buyerId} deleted successfully.`, "success");
+        loadAdminBuyers();
+        loadAdminOverview();
+    } catch (err) {
+        console.error("Delete buyer error:", err);
+        showToast(`⚠️ ${err.message}`, "error");
     }
 }
 
@@ -3443,3 +3653,11 @@ window.onIndividualFarmerRateChange = onIndividualFarmerRateChange;
 window.loadFarmerDemandForecast = loadFarmerDemandForecast;
 window.onFarmerForecastCropChange = onFarmerForecastCropChange;
 window.toggleFarmerTechnicalChart = toggleFarmerTechnicalChart;
+window.openEditFarmerModal = openEditFarmerModal;
+window.closeEditFarmerModal = closeEditFarmerModal;
+window.handleEditFarmerSubmit = handleEditFarmerSubmit;
+window.deleteFarmerRecord = deleteFarmerRecord;
+window.openEditBuyerModal = openEditBuyerModal;
+window.closeEditBuyerModal = closeEditBuyerModal;
+window.handleEditBuyerSubmit = handleEditBuyerSubmit;
+window.deleteBuyerRecord = deleteBuyerRecord;

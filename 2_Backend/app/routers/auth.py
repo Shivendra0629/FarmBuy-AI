@@ -79,9 +79,7 @@ def _register_farmer_record(payload: FarmerLoginRegisterRequest, db: Session):
     if not clean_phone or not clean_name:
         raise HTTPException(status_code=400, detail="Name and Phone Number are required.")
 
-    farmer = db.query(Farmer).filter(
-        (Farmer.contact == clean_phone) | (Farmer.name == clean_name)
-    ).first()
+    farmer = db.query(Farmer).filter(Farmer.contact == clean_phone).first()
 
     lat, lon = estimate_coordinates(clean_state, clean_pincode)
 
@@ -283,9 +281,7 @@ def _register_buyer_record(payload: BuyerLoginRegisterRequest, db: Session):
     if not clean_phone or not clean_name:
         raise HTTPException(status_code=400, detail="Name and Phone Number are required.")
 
-    buyer = db.query(Buyer).filter(
-        (Buyer.phone_number == clean_phone) | (Buyer.name == clean_name)
-    ).first()
+    buyer = db.query(Buyer).filter(Buyer.phone_number == clean_phone).first()
 
     if not buyer:
         buyer = Buyer(

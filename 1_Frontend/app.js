@@ -1693,7 +1693,7 @@ async function loadFarmerOrders(productId = null) {
                 <div class="farmer-orders-empty">
                     <div style="font-size:32px; margin-bottom:8px;">📦</div>
                     <h4>No Incoming Orders Yet for ${selectedCropText}</h4>
-                    <p>When verified buyers (wholesalers, institutions, or retail networks) procure this crop through AgriConnect AI, their order details, contact info, and pickup quantities will appear here.</p>
+                    <p>When verified buyers (wholesalers, institutions, or retail networks) procure this crop through FarmBuy AI, their order details, contact info, and pickup quantities will appear here.</p>
                 </div>
             `;
             return;
@@ -3391,7 +3391,7 @@ function renderOrderContract(order, negInfo = null) {
             </div>
 
             <div class="mt-4 pt-3" style="border-top:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center;">
-                <span class="text-muted" style="font-size:12.5px;">🔒 Cryptographically Signed Procurement Manifest via AgriConnect Supply Intelligence</span>
+                <span class="text-muted" style="font-size:12.5px;">🔒 Cryptographically Signed Procurement Manifest via FarmBuy AI Supply Intelligence</span>
                 <button class="btn-sm" onclick="window.print()">🖨️ Print Dispatch Manifest</button>
             </div>
         </div>

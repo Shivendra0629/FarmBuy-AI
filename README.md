@@ -1,4 +1,4 @@
-# AgriConnect AI: Farm-to-Buyer Supply Intelligence Platform
+# FarmBuy AI: Farm-to-Buyer Supply Intelligence Platform
 
 > **Core Philosophy:**  
 > The platform doesn't just ask: *"Who wants to buy tomatoes?"*  

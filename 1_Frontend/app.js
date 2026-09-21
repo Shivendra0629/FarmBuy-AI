@@ -1524,15 +1524,15 @@ async function loadFarmerProduceList() {
         if (data.kpis) {
             const totOrdered = data.kpis.total_ordered_kg ?? data.kpis.total_cleared_kg ?? 0;
             const totLeft = data.kpis.total_left_kg ?? 0;
-            const orderPct = data.kpis.order_fulfillment_pct ?? data.kpis.overall_clearance_pct ?? 0;
-            const orderRev = data.kpis.total_ordered_revenue ?? data.kpis.total_cleared_revenue ?? 0;
+            const orderRev = data.kpis.earned_from_orders ?? data.kpis.total_ordered_revenue ?? data.kpis.total_cleared_revenue ?? 0;
+            const stockVal = data.kpis.current_stock_value ?? data.kpis.total_remaining_value ?? 0;
 
             if (kpiHarvest) kpiHarvest.textContent = `${Number(data.kpis.total_harvest_kg).toLocaleString()} kg`;
             if (kpiOrdered) kpiOrdered.textContent = `${Number(totOrdered).toLocaleString()} kg`;
             if (kpiClearancePct) kpiClearancePct.textContent = `${orderPct}% Ordered`;
             if (kpiLeft) kpiLeft.textContent = `${Number(totLeft).toLocaleString()} kg`;
             if (kpiRevenue) kpiRevenue.textContent = `₹${Number(orderRev).toLocaleString()}`;
-            if (kpiRemainingVal) kpiRemainingVal.textContent = `₹${Number(data.kpis.total_remaining_value).toLocaleString()}`;
+            if (kpiRemainingVal) kpiRemainingVal.textContent = `₹${Number(stockVal).toLocaleString()}`;
         }
 
         // 2. Populate Farmer Crop Filter Dropdown for Orders
@@ -1601,7 +1601,10 @@ async function loadFarmerProduceList() {
                                 ${diffBadge}
                             </td>
                             <td><strong style="color:#16a34a; font-size:14px;">${Number(leftKg).toLocaleString()}</strong> kg</td>
-                            <td><strong style="color:#2563eb; font-size:14px;">${Number(ordKg).toLocaleString()}</strong> kg</td>
+                            <td>
+                                <strong style="color:#2563eb; font-size:14px;">${Number(ordKg).toLocaleString()}</strong> kg
+                                ${(s.ordered_revenue || s.cleared_revenue) > 0 ? `<div style="font-size:11.5px; color:#15803d; font-weight:700; margin-top:2px;">Earned: ₹${Number(s.ordered_revenue || s.cleared_revenue).toLocaleString()}</div>` : ''}
+                            </td>
                             <td>
                                 <div class="stock-progress-wrap">
                                     <div class="stock-progress-bar">
@@ -1614,7 +1617,10 @@ async function loadFarmerProduceList() {
                                     </div>
                                 </div>
                             </td>
-                            <td><strong class="text-success">₹${Number(s.remaining_value).toLocaleString()}</strong></td>
+                            <td>
+                                <strong class="text-success" style="font-size:14px;">₹${Number(s.remaining_value).toLocaleString()}</strong>
+                                <div style="font-size:11px; color:#64748b;">${Number(leftKg).toLocaleString()} kg unsold</div>
+                            </td>
                             <td>
                                 <div style="display:flex; gap:6px; align-items:center;">
                                     <button type="button" class="btn-sm" style="padding:5px 10px; font-size:12px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; border-radius:4px; font-weight:600; cursor:pointer;" onclick="openEditProduceModal(${s.supply_id}, '${s.product_name}', ${leftKg}, ${s.expected_price}, '${s.quality_grade}')">

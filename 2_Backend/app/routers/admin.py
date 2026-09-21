@@ -703,10 +703,11 @@ def get_admin_stats(
     total_admins = db.query(Admin).filter(Admin.role == "ADMIN").count()
     total_supplies = db.query(Supply).all()
     total_orders = db.query(Order).all()
+    active_orders = [o for o in total_orders if o.status not in ("CANCELLED", "REJECTED", "FAILED")]
 
     stock_left_kg = sum(s.quantity for s in total_supplies)
     stock_cleared_kg = sum((s.cleared_quantity or 0.0) for s in total_supplies)
-    total_revenue = sum(o.total_procurement_cost for o in total_orders)
+    total_revenue = sum(o.total_procurement_cost for o in active_orders)
 
     return {
         "active_farmers": total_farmers,

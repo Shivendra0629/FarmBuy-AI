@@ -508,10 +508,40 @@ def login_admin(payload: AdminLoginRequest, db: Session = Depends(get_db)):
 
 @router.get("/farmer/{farmer_id}/supplies")
 def get_farmer_supplies(farmer_id: int, db: Session = Depends(get_db)):
-    """Get all produce commodities and stock clearance status for a specific farmer."""
+    """Get all produce commodities, authoritative order earnings, and stock clearance status for a specific farmer."""
     farmer = db.query(Farmer).filter(Farmer.id == farmer_id).first()
     if not farmer:
         raise HTTPException(status_code=404, detail="Farmer not found")
+
+    # Authoritative active order statuses (cancelled, rejected, failed orders contribute ₹0)
+    ACTIVE_ORDER_STATUSES = ["CONFIRMED", "COMPLETED", "DELIVERED", "DISPATCHED", "COLLECTING", "PENDING"]
+
+    # Query active order items joined with Order for this farmer
+    active_order_items = (
+        db.query(OrderItem, Order)
+        .join(Order, OrderItem.order_id == Order.id)
+        .filter(
+            OrderItem.farmer_id == farmer_id,
+            Order.status.in_(ACTIVE_ORDER_STATUSES)
+        )
+        .all()
+    )
+
+    # Group active orders by product_id
+    product_orders: Dict[int, Dict[str, float]] = {}
+    for item, ord_rec in active_order_items:
+        pid = ord_rec.product_id
+        if pid not in product_orders:
+            product_orders[pid] = {
+                "ordered_quantity_kg": 0.0,
+                "earned_revenue": 0.0,
+                "order_count": 0
+            }
+        item_qty = float(item.allocated_quantity or 0.0)
+        item_subtot = float(item.subtotal or (item_qty * float(item.price_per_kg or 0.0)))
+        product_orders[pid]["ordered_quantity_kg"] += item_qty
+        product_orders[pid]["earned_revenue"] += item_subtot
+        product_orders[pid]["order_count"] += 1
 
     supplies = (
         db.query(Supply, Product)
@@ -526,30 +556,50 @@ def get_farmer_supplies(farmer_id: int, db: Session = Depends(get_db)):
     total_harvest_kg = 0.0
     total_cleared_kg = 0.0
     total_left_kg = 0.0
+    needs_db_sync = False
 
     for s, p in supplies:
+        pid = p.id
+        asking_price = float(s.expected_price or 0.0)
         stock_left = max(0.0, float(s.quantity or 0.0))
-        stock_cleared = max(0.0, float(s.cleared_quantity or 0.0))
-        initial_tot = float(s.initial_quantity or (stock_left + stock_cleared))
-        if initial_tot <= 0:
-            initial_tot = stock_left + stock_cleared
-        if initial_tot < (stock_left + stock_cleared):
-            initial_tot = stock_left + stock_cleared
 
-        clearance_pct = round((stock_cleared / initial_tot * 100.0), 1) if initial_tot > 0 else 0.0
-        remaining_val = round(stock_left * s.expected_price, 2)
-        cleared_rev = round(stock_cleared * s.expected_price, 2)
-        price_diff = round(s.expected_price - p.mandi_benchmark_price, 2)
+        # Check authoritative active orders first
+        if pid in product_orders and (product_orders[pid]["ordered_quantity_kg"] > 0 or product_orders[pid]["order_count"] > 0):
+            stock_ordered = round(product_orders[pid]["ordered_quantity_kg"], 1)
+            cleared_rev = round(product_orders[pid]["earned_revenue"], 2)
+            if s.cleared_quantity != stock_ordered:
+                s.cleared_quantity = stock_ordered
+                needs_db_sync = True
+        else:
+            # No active orders in OrderItem (e.g. initial state, or all orders cancelled)
+            stock_ordered = 0.0
+            cleared_rev = 0.0
+            if (s.cleared_quantity or 0.0) != 0.0:
+                s.cleared_quantity = 0.0
+                needs_db_sync = True
+
+        # Value of Stock Left: strictly unsold quantity left * asking price!
+        remaining_val = round(stock_left * asking_price, 2)
+
+        # Initial harvest calculation
+        initial_tot = float(s.initial_quantity or (stock_left + stock_ordered))
+        if initial_tot < (stock_left + stock_ordered):
+            initial_tot = stock_left + stock_ordered
+            s.initial_quantity = initial_tot
+            needs_db_sync = True
+
+        clearance_pct = round((stock_ordered / initial_tot * 100.0), 1) if initial_tot > 0 else 0.0
+        price_diff = round(asking_price - float(p.mandi_benchmark_price or 0.0), 2)
 
         total_remaining_val += remaining_val
         total_cleared_revenue += cleared_rev
         total_harvest_kg += initial_tot
-        total_cleared_kg += stock_cleared
+        total_cleared_kg += stock_ordered
         total_left_kg += stock_left
 
-        if stock_left == 0 and stock_cleared > 0:
+        if stock_left == 0 and stock_ordered > 0:
             status_text = "ALL_ORDERED"
-        elif stock_cleared > 0:
+        elif stock_ordered > 0:
             status_text = "PARTIALLY_ORDERED"
         else:
             status_text = "IN_STOCK"
@@ -559,22 +609,29 @@ def get_farmer_supplies(farmer_id: int, db: Session = Depends(get_db)):
             "product_id": p.id,
             "product_name": p.name,
             "category": p.category,
-            "expected_price": round(s.expected_price, 2),
-            "mandi_benchmark": round(p.mandi_benchmark_price, 2),
+            "expected_price": round(asking_price, 2),
+            "mandi_benchmark": round(float(p.mandi_benchmark_price or 0.0), 2),
             "price_diff": price_diff,
             "quality_grade": s.quality_grade or "Grade A",
             "quantity_left_kg": stock_left,
-            "quantity_ordered_kg": stock_cleared,
+            "quantity_ordered_kg": stock_ordered,
             "stock_left_kg": stock_left,
-            "stock_cleared_kg": stock_cleared,
+            "stock_cleared_kg": stock_ordered,
             "total_harvest_kg": initial_tot,
             "ordered_pct": clearance_pct,
             "clearance_pct": clearance_pct,
             "remaining_value": remaining_val,
+            "stock_value": remaining_val,
             "ordered_revenue": cleared_rev,
             "cleared_revenue": cleared_rev,
             "status": status_text
         })
+
+    if needs_db_sync:
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
 
     overall_clearance_pct = round((total_cleared_kg / total_harvest_kg * 100.0), 1) if total_harvest_kg > 0 else 0.0
 
@@ -595,8 +652,10 @@ def get_farmer_supplies(farmer_id: int, db: Session = Depends(get_db)):
             "overall_clearance_pct": overall_clearance_pct,
             "total_ordered_revenue": round(total_cleared_revenue, 2),
             "total_cleared_revenue": round(total_cleared_revenue, 2),
+            "earned_from_orders": round(total_cleared_revenue, 2),
             "total_remaining_value": round(total_remaining_val, 2),
-            "total_inventory_value": round(total_remaining_val, 2)
+            "total_inventory_value": round(total_remaining_val, 2),
+            "current_stock_value": round(total_remaining_val, 2)
         },
         "supplies": result
     }
@@ -740,6 +799,9 @@ def clear_farmer_stock(payload: FarmerClearStockRequest, db: Session = Depends(g
         )
 
     try:
+        if supply.initial_quantity is None:
+            supply.initial_quantity = supply.quantity + (supply.cleared_quantity or 0.0)
+
         supply.quantity = max(0.0, supply.quantity - order_qty)
         supply.cleared_quantity = (supply.cleared_quantity or 0.0) + order_qty
 
@@ -748,6 +810,31 @@ def clear_farmer_stock(payload: FarmerClearStockRequest, db: Session = Depends(g
 
         realized_rate = payload.selling_price_per_kg or supply.expected_price
         cleared_val = round(order_qty * realized_rate, 2)
+
+        # Create authoritative Order and OrderItem records for direct farm gate sale
+        new_order = Order(
+            order_number=f"FGD-{int(datetime.now().timestamp())}-{supply.id}",
+            buyer_name=payload.notes if (payload.notes and payload.notes.strip()) else "Farm Gate Direct Sale",
+            product_id=supply.product_id,
+            total_quantity=order_qty,
+            agreed_price_per_kg=realized_rate,
+            total_procurement_cost=cleared_val,
+            estimated_distance_km=0.0,
+            logistics_cost=0.0,
+            status="CONFIRMED",
+            created_at=datetime.now()
+        )
+        db.add(new_order)
+        db.flush()
+
+        item = OrderItem(
+            order_id=new_order.id,
+            farmer_id=payload.farmer_id,
+            allocated_quantity=order_qty,
+            price_per_kg=realized_rate,
+            subtotal=cleared_val
+        )
+        db.add(item)
 
         db.commit()
         db.refresh(supply)
@@ -827,12 +914,13 @@ def get_farmer_orders(
             "estimated_distance_km": ord_rec.estimated_distance_km
         })
 
+    active_orders = [o for o in orders_list if o.get("status") not in ("CANCELLED", "REJECTED", "FAILED")]
     return {
         "farmer_id": farmer.id,
         "farmer_name": farmer.name,
         "total_orders_count": len(orders_list),
-        "total_ordered_quantity_kg": sum(o["allocated_quantity_kg"] for o in orders_list),
-        "total_order_revenue": sum(o["subtotal"] for o in orders_list),
+        "total_ordered_quantity_kg": sum(o["allocated_quantity_kg"] for o in active_orders),
+        "total_order_revenue": sum(o["subtotal"] for o in active_orders),
         "orders": orders_list
     }
 

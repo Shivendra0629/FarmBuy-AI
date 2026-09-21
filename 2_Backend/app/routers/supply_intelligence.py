@@ -252,6 +252,8 @@ def fulfill_order(payload: OrderCreateRequest, db: Session = Depends(get_db)):
                 Supply.product_id == payload.product_id
             ).first()
             if supply_record:
+                if supply_record.initial_quantity is None:
+                    supply_record.initial_quantity = supply_record.quantity + (supply_record.cleared_quantity or 0.0)
                 supply_record.quantity = max(0.0, supply_record.quantity - item_data["quantity_kg"])
                 supply_record.cleared_quantity = (supply_record.cleared_quantity or 0.0) + item_data["quantity_kg"]
 
@@ -459,6 +461,19 @@ def platform_stats(db: Session = Depends(get_db)):
 def clear_all_orders(db: Session = Depends(get_db)):
     """Clear all procurement order history to keep the dashboard tidy."""
     try:
+        # Restore stock for any active (non-cancelled) orders
+        active_orders = db.query(Order).filter(Order.status != "CANCELLED").all()
+        for ord_rec in active_orders:
+            items = db.query(OrderItem).filter(OrderItem.order_id == ord_rec.id).all()
+            for itm in items:
+                supply = db.query(Supply).filter(
+                    Supply.farmer_id == itm.farmer_id,
+                    Supply.product_id == ord_rec.product_id
+                ).first()
+                if supply:
+                    supply.quantity += itm.allocated_quantity
+                    supply.cleared_quantity = max(0.0, (supply.cleared_quantity or 0.0) - itm.allocated_quantity)
+
         db.query(OrderItem).delete()
         del_count = db.query(Order).delete()
         db.commit()
@@ -482,6 +497,18 @@ def delete_single_order(order_id: int, db: Session = Depends(get_db)):
 
     num = order.order_number
     try:
+        # If the order was NOT already CANCELLED, restore farmer stock before deleting
+        if order.status != "CANCELLED":
+            items = db.query(OrderItem).filter(OrderItem.order_id == order.id).all()
+            for itm in items:
+                supply = db.query(Supply).filter(
+                    Supply.farmer_id == itm.farmer_id,
+                    Supply.product_id == order.product_id
+                ).first()
+                if supply:
+                    supply.quantity += itm.allocated_quantity
+                    supply.cleared_quantity = max(0.0, (supply.cleared_quantity or 0.0) - itm.allocated_quantity)
+
         db.query(OrderItem).filter(OrderItem.order_id == order.id).delete()
         db.delete(order)
         db.commit()

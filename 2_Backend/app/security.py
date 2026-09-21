@@ -8,7 +8,7 @@ from typing import Optional, Dict, Any
 from fastapi import HTTPException, Header, Depends, status
 
 # Super Admin Default Fallbacks from Environment Variables
-DEFAULT_OWNER_ID = os.getenv("OWNER_ADMIN_ID", "Sm06_29")
+DEFAULT_OWNER_ID = os.getenv("OWNER_ADMIN_ID", "Sm_0629")
 DEFAULT_OWNER_PWD = os.getenv("OWNER_ADMIN_PASSWORD", "9973868328")
 OWNER_ADMIN_ID = DEFAULT_OWNER_ID
 OWNER_ADMIN_PASSWORD = DEFAULT_OWNER_PWD

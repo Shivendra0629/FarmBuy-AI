@@ -1524,10 +1524,12 @@ async function loadFarmerProduceList() {
         if (data.kpis) {
             const totOrdered = data.kpis.total_ordered_kg ?? data.kpis.total_cleared_kg ?? 0;
             const totLeft = data.kpis.total_left_kg ?? 0;
+            const totHarvest = data.kpis.total_harvest_kg ?? (totLeft + totOrdered);
+            const orderPct = data.kpis.order_fulfillment_pct ?? data.kpis.overall_clearance_pct ?? (totHarvest > 0 ? Math.round((totOrdered / totHarvest) * 100) : 0);
             const orderRev = data.kpis.earned_from_orders ?? data.kpis.total_ordered_revenue ?? data.kpis.total_cleared_revenue ?? 0;
             const stockVal = data.kpis.current_stock_value ?? data.kpis.total_remaining_value ?? 0;
 
-            if (kpiHarvest) kpiHarvest.textContent = `${Number(data.kpis.total_harvest_kg).toLocaleString()} kg`;
+            if (kpiHarvest) kpiHarvest.textContent = `${Number(totHarvest).toLocaleString()} kg`;
             if (kpiOrdered) kpiOrdered.textContent = `${Number(totOrdered).toLocaleString()} kg`;
             if (kpiClearancePct) kpiClearancePct.textContent = `${orderPct}% Ordered`;
             if (kpiLeft) kpiLeft.textContent = `${Number(totLeft).toLocaleString()} kg`;
@@ -1964,19 +1966,38 @@ function showToast(msg, type = "info") {
 async function checkBackendStatus() {
     const statusText = document.getElementById("statusText");
     const statusPulse = document.querySelector(".status-pulse");
+    const farmerDbBadge = document.getElementById("farmerDbBadge") || document.querySelector(".farmer-badge-group .badge-db");
+    const footerDbEngine = document.getElementById("footerDbEngine");
+
     try {
         const res = await fetch(`${API_BASE}/health`);
         const data = await res.json();
         if (data.status === "healthy") {
-            state.databaseInfo = data.database;
-            const storageBadge = data.database?.is_persistent ? "🟢 PostgreSQL (Persistent)" : "💾 Local Database";
+            state.databaseInfo = data;
+            const isPg = data.database_engine === "postgresql";
+            const storageBadge = isPg ? "🟢 PostgreSQL (Persistent)" : (data.is_persistent ? "🟢 Persistent DB" : "💾 Local Database");
             if (statusText) statusText.textContent = `Backend Connected (v${data.version || "2.0"}) • ${storageBadge}`;
             if (statusPulse) statusPulse.style.background = "#22c55e";
+
+            // Update database status badges dynamically from verified backend configuration
+            if (farmerDbBadge) {
+                if (isPg) {
+                    farmerDbBadge.textContent = "● PostgreSQL Database Active";
+                } else if (data.database_engine === "sqlite") {
+                    farmerDbBadge.textContent = "● SQLite Database Active";
+                } else {
+                    farmerDbBadge.textContent = "● Database Connected";
+                }
+            }
+            if (footerDbEngine) {
+                footerDbEngine.textContent = isPg ? "PostgreSQL DB" : (data.database_engine === "sqlite" ? "SQLite DB" : "Database Connected");
+            }
         }
     } catch (err) {
         console.warn("Backend not yet reachable:", err);
         if (statusText) statusText.textContent = "Backend Offline";
         if (statusPulse) statusPulse.style.background = "#ef4444";
+        if (farmerDbBadge) farmerDbBadge.textContent = "● Database Disconnected";
     }
 }
 

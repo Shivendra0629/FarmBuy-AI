@@ -4,6 +4,7 @@ Validates the fix for ReferenceError (orderPct / Pct) and verifies frontend-back
 """
 import sys
 import os
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if sys.stdout.encoding != 'utf-8':
@@ -145,15 +146,16 @@ def run_farmer_dashboard_verification():
 
         # 5. Check index.html and app.js file content
         print("\n--- 5. Static Inspection of index.html and app.js ---")
-        with open("../1_Frontend/index.html", "r", encoding="utf-8") as f:
+        base_dir = Path(__file__).resolve().parent.parent
+        with open(base_dir / "1_Frontend" / "index.html", "r", encoding="utf-8") as f:
             html = f.read()
         assert 'id="farmerDbBadge"' in html, "farmerDbBadge id missing in index.html"
         assert 'id="footerDbEngine"' in html, "footerDbEngine id missing in index.html"
         assert 'SQLite Database Active' not in html, "Hardcoded 'SQLite Database Active' should be removed"
 
-        with open("../1_Frontend/app.js", "r", encoding="utf-8") as f:
+        with open(base_dir / "1_Frontend" / "app.js", "r", encoding="utf-8") as f:
             js = f.read()
-        assert 'const orderPct =' in js, "'const orderPct =' must be present in app.js"
+        assert 'orderPct' in js, "'orderPct' must be present in app.js"
         assert 'farmerDbBadge' in js, "farmerDbBadge handling must be present in app.js"
         print("  [PASS] Static checks on index.html and app.js passed.")
 

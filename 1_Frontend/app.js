@@ -1510,35 +1510,56 @@ async function loadFarmerProduceList() {
     const kpiRemainingVal = document.getElementById("farmerKpiRemainingVal");
     const cropFilter = document.getElementById("farmerOrderCropFilter");
     const mandiContainer = document.getElementById("farmerMandiRatesContainer");
+    const forecastCropSelect = document.getElementById("farmerForecastCropSelect");
 
+    let data = null;
     try {
         const res = await fetch(`${API_BASE}/api/auth/farmer/${state.currentUser.id}/supplies`);
         if (res.status === 404) {
+            console.warn("Farmer ID not found in database. Logging out.");
             handleLogout();
             return;
         }
-        if (!res.ok) return;
-        const data = await res.json();
-
-        // 1. Update 4 Farmer KPI Cards
-        if (data.kpis) {
-            const totOrdered = data.kpis.total_ordered_kg ?? data.kpis.total_cleared_kg ?? 0;
-            const totLeft = data.kpis.total_left_kg ?? 0;
-            const totHarvest = data.kpis.total_harvest_kg ?? (totLeft + totOrdered);
-            const orderPct = data.kpis.order_fulfillment_pct ?? data.kpis.overall_clearance_pct ?? (totHarvest > 0 ? Math.round((totOrdered / totHarvest) * 100) : 0);
-            const orderRev = data.kpis.earned_from_orders ?? data.kpis.total_ordered_revenue ?? data.kpis.total_cleared_revenue ?? 0;
-            const stockVal = data.kpis.current_stock_value ?? data.kpis.total_remaining_value ?? 0;
-
-            if (kpiHarvest) kpiHarvest.textContent = `${Number(totHarvest).toLocaleString()} kg`;
-            if (kpiOrdered) kpiOrdered.textContent = `${Number(totOrdered).toLocaleString()} kg`;
-            if (kpiClearancePct) kpiClearancePct.textContent = `${orderPct}% Ordered`;
-            if (kpiLeft) kpiLeft.textContent = `${Number(totLeft).toLocaleString()} kg`;
-            if (kpiRevenue) kpiRevenue.textContent = `₹${Number(orderRev).toLocaleString()}`;
-            if (kpiRemainingVal) kpiRemainingVal.textContent = `₹${Number(stockVal).toLocaleString()}`;
+        if (!res.ok) {
+            throw new Error(`Server returned HTTP ${res.status}`);
         }
+        data = await res.json();
+    } catch (fetchErr) {
+        console.error("Error fetching farmer produce list from API:", fetchErr);
+        if (tableBody) {
+            tableBody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4">⚠️ Unable to load produce from database: ${fetchErr.message}. <button type="button" class="btn-sm" style="margin-left:8px; padding:4px 10px; cursor:pointer;" onclick="loadFarmerProduceList()">🔄 Retry</button></td></tr>`;
+        }
+        // Still attempt to load orders & forecast if possible
+        const activeProdFilter = cropFilter && cropFilter.value ? parseInt(cropFilter.value) : null;
+        loadFarmerOrders(activeProdFilter);
+        loadFarmerDemandForecast();
+        return;
+    }
 
-        // 2. Populate Farmer Crop Filter Dropdown for Orders
-        if (cropFilter && data.supplies) {
+    // 1. Update 4 Farmer KPI Cards (Isolated Boundary)
+    try {
+        if (data && data.kpis) {
+            const totOrdered = Number(data.kpis.total_ordered_kg ?? data.kpis.total_cleared_kg ?? 0);
+            const totLeft = Number(data.kpis.total_left_kg ?? 0);
+            const totHarvest = Number(data.kpis.total_harvest_kg ?? (totLeft + totOrdered));
+            const orderPct = Number(data.kpis.order_fulfillment_pct ?? data.kpis.overall_clearance_pct ?? (totHarvest > 0 ? Math.round((totOrdered / totHarvest) * 100) : 0));
+            const orderRev = Number(data.kpis.earned_from_orders ?? data.kpis.total_ordered_revenue ?? data.kpis.total_cleared_revenue ?? 0);
+            const stockVal = Number(data.kpis.current_stock_value ?? data.kpis.total_remaining_value ?? 0);
+
+            if (kpiHarvest) kpiHarvest.textContent = `${totHarvest.toLocaleString()} kg`;
+            if (kpiOrdered) kpiOrdered.textContent = `${totOrdered.toLocaleString()} kg`;
+            if (kpiClearancePct) kpiClearancePct.textContent = `${orderPct}% Ordered`;
+            if (kpiLeft) kpiLeft.textContent = `${totLeft.toLocaleString()} kg`;
+            if (kpiRevenue) kpiRevenue.textContent = `₹${orderRev.toLocaleString()}`;
+            if (kpiRemainingVal) kpiRemainingVal.textContent = `₹${stockVal.toLocaleString()}`;
+        }
+    } catch (kpiErr) {
+        console.error("Error updating farmer KPI cards:", kpiErr);
+    }
+
+    // 2. Populate Farmer Crop Filter Dropdown for Orders (Isolated Boundary)
+    try {
+        if (cropFilter && data && Array.isArray(data.supplies)) {
             const currentVal = cropFilter.value;
             cropFilter.innerHTML = `<option value="">🌾 All Commodities</option>` +
                 data.supplies.map(s => `
@@ -1546,17 +1567,20 @@ async function loadFarmerProduceList() {
                         ${s.product_name} (${Number(s.quantity_ordered_kg || 0).toLocaleString()} kg ordered)
                     </option>
                 `).join("");
-            if (currentVal) {
+            if (currentVal && cropFilter.querySelector(`option[value="${currentVal}"]`)) {
                 cropFilter.value = currentVal;
             }
         }
+    } catch (filterErr) {
+        console.error("Error populating crop filter dropdown:", filterErr);
+    }
 
-        // 2B. Populate Farmer Forecast Crop Dropdown & Load Demand Prediction
-        const forecastCropSelect = document.getElementById("farmerForecastCropSelect");
+    // 2B. Populate Farmer Forecast Crop Dropdown & Load Demand Prediction (Isolated Boundary)
+    try {
         if (forecastCropSelect) {
             const currentSelected = forecastCropSelect.value;
             let optionsHtml = "";
-            if (data.supplies && data.supplies.length > 0) {
+            if (data && Array.isArray(data.supplies) && data.supplies.length > 0) {
                 optionsHtml = data.supplies.map(s => `<option value="${s.product_id}">🌾 ${s.product_name}</option>`).join("");
             } else if (state.products && state.products.length > 0) {
                 optionsHtml = state.products.map(p => `<option value="${p.id}">🌾 ${p.name}</option>`).join("");
@@ -1569,43 +1593,50 @@ async function loadFarmerProduceList() {
             }
             loadFarmerDemandForecast();
         }
+    } catch (forecastErr) {
+        console.error("Error setting up forecast crop select:", forecastErr);
+    }
 
-        // 3. Render Commodities & Stock Table
+    // 3. Render Commodities & Stock Table (Isolated Boundary)
+    try {
         if (tableBody) {
-            if (!data.supplies || data.supplies.length === 0) {
+            if (!data || !Array.isArray(data.supplies) || data.supplies.length === 0) {
                 tableBody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">No active produce listed yet. Use the form below to list your commodities.</td></tr>`;
             } else {
                 tableBody.innerHTML = data.supplies.map(s => {
-                    const ordKg = s.quantity_ordered_kg ?? s.stock_cleared_kg ?? 0;
-                    const leftKg = s.quantity_left_kg ?? s.stock_left_kg ?? 0;
-                    const totKg = s.total_harvest_kg || (leftKg + ordKg);
-                    const pctOrdered = Math.min(100, Math.max(0, s.ordered_pct ?? s.clearance_pct ?? 0));
+                    const ordKg = Number(s.quantity_ordered_kg ?? s.stock_cleared_kg ?? 0);
+                    const leftKg = Number(s.quantity_left_kg ?? s.stock_left_kg ?? 0);
+                    const totKg = Number(s.total_harvest_kg || (leftKg + ordKg));
+                    const pctOrdered = Math.min(100, Math.max(0, Number(s.ordered_pct ?? s.clearance_pct ?? 0)));
                     const pctLeft = Math.max(0, 100 - pctOrdered);
                     
                     let diffBadge = "";
-                    if (s.price_diff > 0) {
-                        diffBadge = `<span class="mandi-diff-tag above">+₹${s.price_diff.toFixed(2)} vs Mandi</span>`;
-                    } else if (s.price_diff < 0) {
-                        diffBadge = `<span class="mandi-diff-tag below">-₹${Math.abs(s.price_diff).toFixed(2)} vs Mandi</span>`;
+                    const priceDiff = Number(s.price_diff || 0);
+                    if (priceDiff > 0) {
+                        diffBadge = `<span class="mandi-diff-tag above">+₹${priceDiff.toFixed(2)} vs Mandi</span>`;
+                    } else if (priceDiff < 0) {
+                        diffBadge = `<span class="mandi-diff-tag below">-₹${Math.abs(priceDiff).toFixed(2)} vs Mandi</span>`;
                     } else {
                         diffBadge = `<span class="mandi-diff-tag equal">At Mandi Parity</span>`;
                     }
+
+                    const earnedAmt = Number(s.ordered_revenue || s.cleared_revenue || 0);
 
                     return `
                         <tr>
                             <td>
                                 <strong>${s.product_name}</strong> 
-                                <span class="badge" style="background:#f1f5f9; color:#475569; font-size:11px; margin-left:4px;">${s.quality_grade}</span>
+                                <span class="badge" style="background:#f1f5f9; color:#475569; font-size:11px; margin-left:4px;">${s.quality_grade || 'Grade A'}</span>
                             </td>
-                            <td><strong>₹${Number(s.expected_price).toFixed(2)}</strong>/kg</td>
+                            <td><strong>₹${Number(s.expected_price || 0).toFixed(2)}</strong>/kg</td>
                             <td>
-                                <span>₹${Number(s.mandi_benchmark).toFixed(2)}/kg</span>
+                                <span>₹${Number(s.mandi_benchmark || 0).toFixed(2)}/kg</span>
                                 ${diffBadge}
                             </td>
                             <td><strong style="color:#16a34a; font-size:14px;">${Number(leftKg).toLocaleString()}</strong> kg</td>
                             <td>
                                 <strong style="color:#2563eb; font-size:14px;">${Number(ordKg).toLocaleString()}</strong> kg
-                                ${(s.ordered_revenue || s.cleared_revenue) > 0 ? `<div style="font-size:11.5px; color:#15803d; font-weight:700; margin-top:2px;">Earned: ₹${Number(s.ordered_revenue || s.cleared_revenue).toLocaleString()}</div>` : ''}
+                                ${earnedAmt > 0 ? `<div style="font-size:11.5px; color:#15803d; font-weight:700; margin-top:2px;">Earned: ₹${Number(earnedAmt).toLocaleString()}</div>` : ''}
                             </td>
                             <td>
                                 <div class="stock-progress-wrap">
@@ -1620,12 +1651,12 @@ async function loadFarmerProduceList() {
                                 </div>
                             </td>
                             <td>
-                                <strong class="text-success" style="font-size:14px;">₹${Number(s.remaining_value).toLocaleString()}</strong>
+                                <strong class="text-success" style="font-size:14px;">₹${Number(s.remaining_value || 0).toLocaleString()}</strong>
                                 <div style="font-size:11px; color:#64748b;">${Number(leftKg).toLocaleString()} kg unsold</div>
                             </td>
                             <td>
                                 <div style="display:flex; gap:6px; align-items:center;">
-                                    <button type="button" class="btn-sm" style="padding:5px 10px; font-size:12px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; border-radius:4px; font-weight:600; cursor:pointer;" onclick="openEditProduceModal(${s.supply_id}, '${s.product_name}', ${leftKg}, ${s.expected_price}, '${s.quality_grade}')">
+                                    <button type="button" class="btn-sm" style="padding:5px 10px; font-size:12px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; border-radius:4px; font-weight:600; cursor:pointer;" onclick="openEditProduceModal(${s.supply_id}, '${s.product_name}', ${leftKg}, ${s.expected_price}, '${s.quality_grade || 'Grade A'}')">
                                         ✏️ Edit
                                     </button>
                                     <button type="button" class="btn-primary" style="padding:5px 12px; font-size:12px; background:#2563eb; display:inline-flex; align-items:center; gap:5px;" onclick="selectCropAndShowOrders(${s.product_id}, '${s.product_name}')">
@@ -1638,22 +1669,29 @@ async function loadFarmerProduceList() {
                 }).join("");
             }
         }
+    } catch (tableErr) {
+        console.error("Error rendering commodities table:", tableErr);
+        if (tableBody) {
+            tableBody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4">⚠️ Error rendering commodities table: ${tableErr.message}. <button class="btn-sm" onclick="loadFarmerProduceList()">🔄 Retry</button></td></tr>`;
+        }
+    }
 
-        // 4. Render Mandi Guidance Cards
-        if (mandiContainer && data.supplies) {
+    // 4. Render Mandi Guidance Cards (Isolated Boundary)
+    try {
+        if (mandiContainer && data && Array.isArray(data.supplies)) {
             mandiContainer.innerHTML = data.supplies.map(s => {
-                const leftKg = s.quantity_left_kg ?? s.stock_left_kg ?? 0;
-                const ordKg = s.quantity_ordered_kg ?? s.stock_cleared_kg ?? 0;
+                const leftKg = Number(s.quantity_left_kg ?? s.stock_left_kg ?? 0);
+                const ordKg = Number(s.quantity_ordered_kg ?? s.stock_cleared_kg ?? 0);
                 return `
                 <div class="farmer-mandi-card">
                     <h4>${s.product_name}</h4>
                     <div class="rate-row">
                         <span style="color:#64748b;">Mandi Benchmark</span>
-                        <strong>₹${Number(s.mandi_benchmark).toFixed(2)}/kg</strong>
+                        <strong>₹${Number(s.mandi_benchmark || 0).toFixed(2)}/kg</strong>
                     </div>
                     <div class="rate-row">
                         <span style="color:#64748b;">Your Asking Rate</span>
-                        <strong style="color:${s.price_diff > 0 ? '#b91c1c' : '#15803d'};">₹${Number(s.expected_price).toFixed(2)}/kg</strong>
+                        <strong style="color:${(s.price_diff || 0) > 0 ? '#b91c1c' : '#15803d'};">₹${Number(s.expected_price || 0).toFixed(2)}/kg</strong>
                     </div>
                     <div class="rate-row" style="font-size:11.5px;">
                         <span style="color:#64748b;">Quantity Left / Ordered</span>
@@ -1662,13 +1700,16 @@ async function loadFarmerProduceList() {
                 </div>
             `}).join("");
         }
+    } catch (mandiErr) {
+        console.error("Error rendering mandi cards:", mandiErr);
+    }
 
-        // 5. Load and Render Incoming Buyer Orders
+    // 5. Load and Render Incoming Buyer Orders (Independent Execution)
+    try {
         const activeProdFilter = cropFilter && cropFilter.value ? parseInt(cropFilter.value) : null;
         await loadFarmerOrders(activeProdFilter);
-
-    } catch (err) {
-        console.error("Error loading farmer produce list:", err);
+    } catch (ordersErr) {
+        console.error("Error triggering loadFarmerOrders:", ordersErr);
     }
 }
 
@@ -1682,7 +1723,7 @@ async function loadFarmerOrders(productId = null) {
         const url = `${API_BASE}/api/auth/farmer/${state.currentUser.id}/orders${productId ? `?product_id=${productId}` : ""}`;
         const res = await fetch(url);
         if (!res.ok) {
-            container.innerHTML = `<div class="text-center text-muted py-4">Unable to load buyer orders.</div>`;
+            container.innerHTML = `<div class="text-center text-danger py-4">⚠️ Unable to load buyer orders from server (Status: ${res.status}). <button type="button" class="btn-sm" style="margin-left:8px; padding:4px 10px; cursor:pointer;" onclick="loadFarmerOrders(${productId ? productId : 'null'})">🔄 Retry</button></div>`;
             return;
         }
         const data = await res.json();
@@ -1714,10 +1755,10 @@ async function loadFarmerOrders(productId = null) {
                                 <div class="order-buyer-contact">
                                     <span>📞 <a href="tel:${o.buyer_phone}">${o.buyer_phone}</a></span>
                                     <span>•</span>
-                                    <span>📍 ${o.buyer_city}</span>
+                                    <span>📍 ${o.buyer_city || o.buyer_address || 'Regional Buyer'}</span>
                                 </div>
                             </div>
-                            <span class="badge badge-verified" style="font-size:11px;">${o.status || 'CONFIRMED'}</span>
+                            <span class="badge ${o.status === 'CONFIRMED' ? 'badge-verified' : 'badge-cancelled'}" style="font-size:11px;">${o.status || 'CONFIRMED'}</span>
                         </div>
 
                         <div class="order-card-details">
@@ -1754,7 +1795,7 @@ async function loadFarmerOrders(productId = null) {
 
     } catch (err) {
         console.error("Error loading farmer orders:", err);
-        container.innerHTML = `<div class="text-center text-danger py-4">Error loading orders.</div>`;
+        container.innerHTML = `<div class="text-center text-danger py-4">⚠️ Error loading buyer orders: ${err.message || 'Network/Server Error'}. <button type="button" class="btn-sm" style="margin-left:8px; padding:4px 10px; cursor:pointer;" onclick="loadFarmerOrders(${productId ? productId : 'null'})">🔄 Retry</button></div>`;
     }
 }
 
@@ -2580,6 +2621,16 @@ function renderForecastChart(forecast) {
 async function loadFarmerDemandForecast() {
     const cropSelect = document.getElementById("farmerForecastCropSelect");
     if (!cropSelect) return;
+
+    if (cropSelect.options.length === 0 || (cropSelect.options.length === 1 && (!cropSelect.options[0].value || cropSelect.options[0].text.includes("Loading")))) {
+        let opts = "";
+        if (state.products && state.products.length > 0) {
+            opts = state.products.map(p => `<option value="${p.id}">🌾 ${p.name}</option>`).join("");
+        } else {
+            opts = `<option value="1">🌾 Tomato</option><option value="2">🌾 Potato</option><option value="3">🌾 Onion</option>`;
+        }
+        cropSelect.innerHTML = opts;
+    }
 
     let productId = parseInt(cropSelect.value, 10);
     if (!productId || isNaN(productId)) {
